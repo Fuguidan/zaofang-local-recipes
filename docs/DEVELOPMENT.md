@@ -8,6 +8,7 @@
 - `feat(app): 完成本地菜谱核心功能`：实现本地存储、菜谱管理、推荐、备份、离线、诊断和图片 AI 配置。
 - `test(app): 完成核心功能综合验收`：覆盖推荐、ZIP、隐私、渲染和浏览器端菜谱生命周期。
 - `chore(hosting): 绑定生产站点`：保存托管项目标识，数据绑定保持为空。
+- `feat(android): 接入Capacitor原生应用`：增加 Android 静态构建入口、Capacitor 配置及原生工程。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -80,3 +81,12 @@
 - 测试：类型检查通过；6 项领域测试和 1 项服务端渲染测试通过；生产构建通过；浏览器验证菜谱增删改查和 2 人推荐 3 道菜通过。
 - 已知问题：浏览器自动化环境未捕获到由临时链接触发的下载事件，ZIP 生成、解析、图片往返、密钥排除和损坏文件拒绝已由领域测试覆盖。
 - 下一步：根据真实使用反馈迭代推荐规则与备份冲突交互。
+
+## 2026-07-28 · 阶段九：Capacitor Android 离线安装包
+
+- 目标：不依赖网站托管，将现有本地优先应用封装成可侧载的 Android APK。
+- 修改：接入 Capacitor 8，增加独立 Vite 静态构建入口、`cn.zaofang.recipes` 原生应用配置、Android 工程和一键同步/调试 APK 脚本。
+- 决策：Android WebView 直接加载 APK 内置资源；IndexedDB 数据保留在手机应用沙盒；APK 和本地 SDK 配置不进入 Git。
+- 测试：Android Web 静态包生产构建通过；Capacitor 资源同步通过。
+- 已知问题：首次本机构建需要用户本人接受 Google Android SDK License，接受前无法下载 Android 36 平台并产出 APK。
+- 下一步：用户接受 SDK License 后安装 Android 36 编译组件，执行 Gradle 构建并校验 APK。

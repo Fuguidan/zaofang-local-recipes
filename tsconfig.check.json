@@ -7,6 +7,10 @@
     "next-env.d.ts",
     "app/**/*.ts",
     "app/**/*.tsx",
+    "capacitor/**/*.ts",
+    "capacitor/**/*.tsx",
+    "capacitor.config.ts",
+    "vite.capacitor.config.ts",
     "tests/**/*.ts"
   ],
   "exclude": ["node_modules"]
