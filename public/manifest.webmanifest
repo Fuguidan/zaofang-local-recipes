@@ -1,0 +1,13 @@
+{
+  "name": "灶房 · 本地智能菜谱",
+  "short_name": "灶房",
+  "description": "数据留在本机的菜谱管理和每餐推荐工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f3ec",
+  "theme_color": "#242923",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

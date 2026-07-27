@@ -1,0 +1,949 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  AIProviderConfig,
+  AppSettings,
+  Difficulty,
+  DietType,
+  Flavor,
+  Ingredient,
+  LogEntry,
+  MealType,
+  Recipe,
+  RecipeInput,
+  RecommendationHistory,
+} from "../lib/types";
+import { clearBusinessData, historyStore, logStore, recipeStore, settingsStore } from "../lib/storage";
+import { AppError, toAppError } from "../lib/errors";
+import { logger } from "../lib/logger";
+import { recommendRecipes } from "../lib/recommendation";
+import { createBackup, parseBackup } from "../lib/backup";
+import { parseRecipeImage } from "../lib/ai";
+
+type View = "recipes" | "recommend" | "backup" | "settings";
+type EditorMode = "create" | "edit";
+
+const FLAVORS: Flavor[] = ["清淡", "辛辣", "酸甜", "咸鲜", "麻辣", "鲜香"];
+const MEALS: Array<{ value: MealType; label: string }> = [
+  { value: "breakfast", label: "早餐" },
+  { value: "lunch", label: "午餐" },
+  { value: "dinner", label: "晚餐" },
+];
+const DEFAULT_TAGS = ["快手菜", "下饭", "汤羹", "凉菜", "主食", "家常", "周末"];
+const DIET_TYPES: DietType[] = ["荤菜", "素菜", "主食", "汤羹"];
+const DIFFICULTIES: Difficulty[] = ["简单", "适中", "进阶"];
+
+const SAMPLE_RECIPES: Recipe[] = [
+  sampleRecipe("番茄炒蛋", "酸甜", "素菜", ["lunch", "dinner"], ["快手菜", "下饭"], 15, ["番茄", "鸡蛋"], ["番茄切块，鸡蛋打散。", "鸡蛋炒熟盛出。", "番茄炒出汁，放回鸡蛋调味。"]),
+  sampleRecipe("清炒时蔬", "清淡", "素菜", ["lunch", "dinner"], ["快手菜", "家常"], 12, ["当季青菜", "蒜"], ["青菜洗净沥水。", "热锅爆香蒜末，大火快炒。"]),
+  sampleRecipe("可乐鸡翅", "咸鲜", "荤菜", ["lunch", "dinner"], ["下饭", "周末"], 35, ["鸡翅", "可乐", "姜"], ["鸡翅焯水。", "煎至两面金黄，加入可乐和姜。", "小火焖煮后收汁。"]),
+  sampleRecipe("小米南瓜粥", "清淡", "主食", ["breakfast"], ["主食", "家常"], 35, ["小米", "南瓜"], ["小米淘洗，南瓜切块。", "加水煮开后小火煮至浓稠。"]),
+  sampleRecipe("紫菜蛋花汤", "鲜香", "汤羹", ["lunch", "dinner"], ["汤羹", "快手菜"], 10, ["紫菜", "鸡蛋"], ["水开后放紫菜。", "淋入蛋液，调味后关火。"]),
+];
+
+function sampleRecipe(
+  name: string,
+  flavor: Flavor,
+  dietType: DietType,
+  meals: MealType[],
+  tags: string[],
+  duration: number,
+  ingredients: string[],
+  steps: string[],
+): Recipe {
+  const now = new Date().toISOString();
+  return {
+    id: `sample-${name}`,
+    name,
+    description: "适合日常餐桌的中式家常菜。",
+    ingredients: ingredients.map((item) => ({ id: crypto.randomUUID(), name: item, amount: "适量", unit: "" })),
+    steps,
+    meals,
+    flavors: [flavor],
+    tags,
+    dietType,
+    duration,
+    difficulty: "简单",
+    incomplete: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function emptyRecipe(): RecipeInput {
+  return {
+    name: "",
+    description: "",
+    ingredients: [{ id: crypto.randomUUID(), name: "", amount: "", unit: "" }],
+    steps: [""],
+    meals: ["dinner"],
+    flavors: [],
+    tags: [],
+    dietType: "荤菜",
+    duration: 20,
+    difficulty: "简单",
+    incomplete: true,
+  };
+}
+
+function mealLabel(meal: MealType) {
+  return MEALS.find((item) => item.value === meal)?.label || meal;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function ErrorNotice({ error, onClose }: { error?: AppError; onClose: () => void }) {
+  if (!error) return null;
+  return (
+    <div className="toast error-toast" role="alert">
+      <div>
+        <strong>{error.userMessage}</strong>
+        <small>错误编号：{error.code}</small>
+      </div>
+      <button className="icon-button" aria-label="关闭错误提示" onClick={onClose}>×</button>
+    </div>
+  );
+}
+
+function ImageThumb({ recipe, large = false }: { recipe: Recipe; large?: boolean }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    if (!recipe.image) return;
+    const next = URL.createObjectURL(recipe.image);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [recipe.image]);
+  return (
+    <div className={`recipe-image ${large ? "recipe-image-large" : ""}`}>
+      {url ? <img src={url} alt={`${recipe.name}菜品照片`} /> : <span aria-hidden="true">食</span>}
+    </div>
+  );
+}
+
+export default function RecipeApp() {
+  const [view, setView] = useState<View>("recipes");
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [history, setHistory] = useState<RecommendationHistory[]>([]);
+  const [settings, setSettings] = useState<AppSettings>({
+    debugMode: false,
+    ai: { endpoint: "https://api.deepseek.com/chat/completions", model: "", apiKey: "", enabled: false },
+  });
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<AppError>();
+  const [notice, setNotice] = useState("");
+  const [editor, setEditor] = useState<{ mode: EditorMode; value: RecipeInput; id?: string }>();
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe>();
+  const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Recipe>();
+
+  const reloadLogs = useCallback(() => logStore.all().then(setLogs).catch(() => undefined), []);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [storedRecipes, storedSettings, storedHistory] = await Promise.all([
+          recipeStore.all(),
+          settingsStore.get(),
+          historyStore.all(),
+        ]);
+        if (!storedRecipes.length) {
+          for (const recipe of SAMPLE_RECIPES) await recipeStore.put(recipe);
+          setRecipes(SAMPLE_RECIPES);
+        } else setRecipes(storedRecipes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+        setSettings(storedSettings);
+        setHistory(storedHistory);
+        await logger.info("app", "startup_ready", undefined, { result: "success" });
+        await reloadLogs();
+      } catch (caught) {
+        setError(toAppError(caught, "STORAGE"));
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
+    const onUnhandled = (event: PromiseRejectionEvent) => {
+      const appError = toAppError(event.reason);
+      void logger.error("global", "unhandled_rejection", undefined, { errorCode: appError.code, message: appError.message });
+    };
+    window.addEventListener("unhandledrejection", onUnhandled);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch((caught) => {
+        const appError = toAppError(caught, "PWA");
+        void logger.warn("pwa", "registration_failed", undefined, { errorCode: appError.code, message: appError.message });
+      });
+    }
+    return () => window.removeEventListener("unhandledrejection", onUnhandled);
+  }, [reloadLogs]);
+
+  const filteredRecipes = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return recipes;
+    return recipes.filter((recipe) =>
+      [recipe.name, recipe.description, ...recipe.flavors, ...recipe.tags, ...recipe.ingredients.map((item) => item.name)]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [recipes, search]);
+
+  async function saveRecipe(input: RecipeInput, id?: string) {
+    const operationId = crypto.randomUUID();
+    const started = performance.now();
+    try {
+      if (!input.name.trim() && !input.description.trim() && !input.image) {
+        throw new AppError("VALIDATION", "至少填写菜名、说明或上传图片");
+      }
+      const existing = id ? recipes.find((item) => item.id === id) : undefined;
+      const now = new Date().toISOString();
+      const recipe: Recipe = {
+        ...input,
+        name: input.name.trim() || "待完善菜谱",
+        ingredients: input.ingredients.filter((item) => item.name.trim()),
+        steps: input.steps.filter((step) => step.trim()),
+        incomplete: !input.name.trim() || !input.ingredients.some((item) => item.name.trim()) || !input.steps.some((step) => step.trim()),
+        id: id || crypto.randomUUID(),
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+      };
+      await recipeStore.put(recipe);
+      setRecipes((current) => [recipe, ...current.filter((item) => item.id !== recipe.id)]);
+      setEditor(undefined);
+      setSelectedRecipe(recipe);
+      setNotice(existing ? "菜谱已更新" : "菜谱已保存到本机");
+      await logger.info("recipe", existing ? "recipe_updated" : "recipe_created", operationId, {
+        result: "success",
+        durationMs: Math.round(performance.now() - started),
+      });
+      await reloadLogs();
+    } catch (caught) {
+      const appError = toAppError(caught, caught instanceof AppError ? caught.kind : "STORAGE");
+      setError(appError);
+      await logger.error("recipe", "recipe_save_failed", operationId, {
+        result: "failed",
+        errorCode: appError.code,
+        message: appError.message,
+        durationMs: Math.round(performance.now() - started),
+      });
+    }
+  }
+
+  async function deleteRecipe(recipe: Recipe) {
+    const operationId = crypto.randomUUID();
+    try {
+      await recipeStore.delete(recipe.id);
+      setRecipes((current) => current.filter((item) => item.id !== recipe.id));
+      setSelectedRecipe(undefined);
+      setDeleteTarget(undefined);
+      setNotice("菜谱和关联图片已删除");
+      await logger.info("recipe", "recipe_deleted", operationId, { result: "success" });
+      await reloadLogs();
+    } catch (caught) {
+      const appError = toAppError(caught, "STORAGE");
+      setError(appError);
+      await logger.error("recipe", "recipe_delete_failed", operationId, { errorCode: appError.code, message: appError.message });
+    }
+  }
+
+  function editExisting(recipe: Recipe) {
+    const { id, createdAt, updatedAt, ...value } = recipe;
+    setEditor({ mode: "edit", id, value });
+    setSelectedRecipe(undefined);
+  }
+
+  const navItems: Array<{ id: View; label: string; hint: string }> = [
+    { id: "recipes", label: "我的菜谱", hint: `${recipes.length} 道` },
+    { id: "recommend", label: "今日推荐", hint: "本地规则" },
+    { id: "backup", label: "数据管家", hint: "导入导出" },
+    { id: "settings", label: "设置与诊断", hint: settings.debugMode ? "调试中" : "本机" },
+  ];
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <button className="brand" onClick={() => setView("recipes")}>
+          <span className="brand-mark">灶</span>
+          <span><strong>灶房</strong><small>本地菜谱</small></span>
+        </button>
+        <nav aria-label="主要功能">
+          {navItems.map((item) => (
+            <button key={item.id} className={view === item.id ? "nav-active" : ""} onClick={() => setView(item.id)}>
+              <span>{item.label}</span><small>{item.hint}</small>
+            </button>
+          ))}
+        </nav>
+        <div className="privacy-card">
+          <span className="status-dot" />
+          <div><strong>数据留在本机</strong><small>未启用云端数据库</small></div>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="mobile-header">
+          <div className="brand"><span className="brand-mark">灶</span><strong>灶房</strong></div>
+          <select aria-label="切换功能" value={view} onChange={(event) => setView(event.target.value as View)}>
+            {navItems.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </header>
+
+        {loading ? (
+          <div className="loading-state"><span className="loader" /><p>正在打开你的本地菜谱…</p></div>
+        ) : (
+          <>
+            {view === "recipes" && (
+              <RecipesView
+                recipes={filteredRecipes}
+                total={recipes.length}
+                search={search}
+                onSearch={setSearch}
+                onCreate={() => { setEditor({ mode: "create", value: emptyRecipe() }); setSelectedRecipe(undefined); }}
+                onSelect={setSelectedRecipe}
+                onEdit={editExisting}
+                onDelete={setDeleteTarget}
+              />
+            )}
+            {view === "recommend" && (
+              <RecommendView recipes={recipes} history={history} onHistory={async (entry) => {
+                await historyStore.put(entry);
+                setHistory((current) => [...current, entry]);
+              }} />
+            )}
+            {view === "backup" && (
+              <BackupView
+                recipes={recipes}
+                history={history}
+                settings={settings}
+                onImported={(nextRecipes, nextHistory) => {
+                  setRecipes(nextRecipes);
+                  setHistory(nextHistory);
+                  setNotice(`成功导入 ${nextRecipes.length} 道菜谱`);
+                }}
+                onCleared={() => { setRecipes([]); setHistory([]); setNotice("本地业务数据已清空"); }}
+                onError={setError}
+                refreshLogs={reloadLogs}
+              />
+            )}
+            {view === "settings" && (
+              <SettingsView
+                settings={settings}
+                logs={logs}
+                onSettings={async (next) => {
+                  await settingsStore.put(next);
+                  setSettings(next);
+                  await logger.info("settings", "settings_updated", undefined, { result: "success" });
+                  await reloadLogs();
+                  setNotice("设置已保存在本机");
+                }}
+                refreshLogs={reloadLogs}
+                onError={setError}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      {editor && (
+        <RecipeEditor
+          editor={editor}
+          settings={settings}
+          onChange={(value) => setEditor((current) => current ? { ...current, value } : current)}
+          onCancel={() => setEditor(undefined)}
+          onSave={() => void saveRecipe(editor.value, editor.id)}
+          onError={setError}
+        />
+      )}
+      {selectedRecipe && (
+        <RecipeDetail recipe={selectedRecipe} onClose={() => setSelectedRecipe(undefined)} onEdit={() => editExisting(selectedRecipe)} />
+      )}
+      {deleteTarget && (
+        <ConfirmDialog
+          title={`删除“${deleteTarget.name}”？`}
+          body="菜谱和关联图片将从当前设备永久删除，此操作无法撤销。"
+          confirmLabel="确认删除"
+          onCancel={() => setDeleteTarget(undefined)}
+          onConfirm={() => void deleteRecipe(deleteTarget)}
+        />
+      )}
+      <ErrorNotice error={error} onClose={() => setError(undefined)} />
+      {notice && <div className="toast success-toast" role="status">{notice}<button className="icon-button" onClick={() => setNotice("")}>×</button></div>}
+    </div>
+  );
+}
+
+function RecipesView({
+  recipes,
+  total,
+  search,
+  onSearch,
+  onCreate,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  recipes: Recipe[];
+  total: number;
+  search: string;
+  onSearch: (value: string) => void;
+  onCreate: () => void;
+  onSelect: (recipe: Recipe) => void;
+  onEdit: (recipe: Recipe) => void;
+  onDelete: (recipe: Recipe) => void;
+}) {
+  return (
+    <section className="page-section">
+      <div className="page-heading">
+        <div><span className="eyebrow">私人菜谱库 · 仅此设备</span><h1>今天想做什么菜？</h1><p>收好家里的味道，也为下一餐留一点灵感。</p></div>
+        <button className="button-primary" onClick={onCreate}><span>＋</span> 添加菜谱</button>
+      </div>
+      <div className="toolbar">
+        <label className="search-field"><span>⌕</span><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="搜索菜名、食材或标签" /></label>
+        <span className="recipe-count">共 {total} 道菜谱</span>
+      </div>
+      {recipes.length ? (
+        <div className="recipe-grid">
+          {recipes.map((recipe) => (
+            <article className="recipe-card" key={recipe.id}>
+              <button className="card-open" onClick={() => onSelect(recipe)}>
+                <ImageThumb recipe={recipe} />
+                <div className="card-body">
+                  <div className="card-meta"><span>{recipe.dietType}</span><span>{recipe.duration} 分钟</span></div>
+                  <h2>{recipe.name}</h2>
+                  <p>{recipe.description || "还没有补充说明"}</p>
+                  <div className="tag-row">{[...recipe.flavors, ...recipe.tags].slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}</div>
+                  {recipe.incomplete && <span className="draft-badge">待完善</span>}
+                </div>
+              </button>
+              <div className="card-actions">
+                <button onClick={() => onEdit(recipe)}>编辑</button>
+                <button className="danger-link" onClick={() => onDelete(recipe)}>删除</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state"><span>空</span><h2>还没有找到合适的菜谱</h2><p>换个关键词，或录入一道新菜。</p><button className="button-primary" onClick={onCreate}>添加第一道菜</button></div>
+      )}
+    </section>
+  );
+}
+
+function RecipeEditor({
+  editor,
+  settings,
+  onChange,
+  onCancel,
+  onSave,
+  onError,
+}: {
+  editor: { mode: EditorMode; value: RecipeInput };
+  settings: AppSettings;
+  onChange: (value: RecipeInput) => void;
+  onCancel: () => void;
+  onSave: () => void;
+  onError: (error: AppError) => void;
+}) {
+  const value = editor.value;
+  const [parsing, setParsing] = useState(false);
+  const [parseNotice, setParseNotice] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
+  const [customTag, setCustomTag] = useState("");
+  const patch = <K extends keyof RecipeInput>(key: K, next: RecipeInput[K]) => onChange({ ...value, [key]: next });
+
+  async function parseImage() {
+    if (!value.image) return;
+    if (!settings.ai.enabled || !settings.ai.apiKey) {
+      setParseNotice("尚未配置 API Key，无法自动解析。图片和文字仍可原样保存。");
+      return;
+    }
+    const operationId = crypto.randomUUID();
+    const started = performance.now();
+    abortRef.current = new AbortController();
+    setParsing(true);
+    setParseNotice("图片只会在本次解析中发送，正在等待模型返回…");
+    try {
+      const parsed = await parseRecipeImage(value.image, value.description, settings.ai, abortRef.current.signal);
+      onChange({
+        ...value,
+        ...parsed,
+        image: value.image,
+        imageName: value.imageName,
+        ingredients: (parsed.ingredients || value.ingredients).map((item) => ({ ...item, id: item.id || crypto.randomUUID() })),
+      });
+      setParseNotice("解析完成，请检查并修改结果后再保存。");
+      await logger.info("ai", "image_parse_success", operationId, { result: "success", durationMs: Math.round(performance.now() - started) });
+    } catch (caught) {
+      const error = toAppError(caught, "NETWORK");
+      if (abortRef.current?.signal.aborted) setParseNotice("已取消解析，原始图片和文字仍在。");
+      else {
+        onError(error);
+        setParseNotice("解析失败，原始图片和文字已保留，可直接保存。");
+      }
+      await logger.warn("ai", "image_parse_failed", operationId, {
+        errorCode: error.code,
+        message: error.message,
+        durationMs: Math.round(performance.now() - started),
+      });
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <section className="drawer editor-drawer" role="dialog" aria-modal="true" aria-label={editor.mode === "create" ? "添加菜谱" : "编辑菜谱"}>
+        <header className="drawer-header">
+          <div><span className="eyebrow">{editor.mode === "create" ? "收下一道新味道" : "修改菜谱"}</span><h2>{editor.mode === "create" ? "添加菜谱" : value.name}</h2></div>
+          <button className="icon-button close-button" onClick={onCancel} aria-label="取消并关闭">×</button>
+        </header>
+        <div className="editor-content">
+          <section className="form-section image-upload-section">
+            <div className="section-title"><span>01</span><div><h3>菜品图片与说明</h3><p>没有 API Key 也可以原样保存，稍后再完善。</p></div></div>
+            <label className="image-drop">
+              {value.image ? <ImagePreview blob={value.image} /> : <span className="upload-placeholder"><b>＋</b>选择或拍摄菜品图片<small>支持 JPG、PNG、WebP</small></span>}
+              <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) onChange({ ...value, image: file, imageName: file.name });
+              }} />
+            </label>
+            <label className="field"><span>原始说明</span><textarea rows={3} value={value.description} onChange={(event) => patch("description", event.target.value)} placeholder="例如：外婆做的红烧肉，偏甜口……" /></label>
+            {value.image && (
+              <div className="parse-panel">
+                <div><strong>图片智能解析</strong><small>{settings.ai.enabled && settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"}` : "尚未配置 API Key"}</small></div>
+                {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消解析</button> : <button className="button-secondary" onClick={() => void parseImage()}>自动解析</button>}
+              </div>
+            )}
+            {parseNotice && <p className="inline-notice">{parseNotice}</p>}
+          </section>
+          <section className="form-section">
+            <div className="section-title"><span>02</span><div><h3>基本信息</h3><p>菜名可留空并保存为待完善菜谱。</p></div></div>
+            <div className="two-columns">
+              <label className="field field-wide"><span>菜名</span><input value={value.name} onChange={(event) => patch("name", event.target.value)} placeholder="例如：糖醋排骨" /></label>
+              <label className="field"><span>耗时（分钟）</span><input type="number" min={1} max={600} value={value.duration} onChange={(event) => patch("duration", Number(event.target.value))} /></label>
+              <label className="field"><span>分类</span><select value={value.dietType} onChange={(event) => patch("dietType", event.target.value as DietType)}>{DIET_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
+              <label className="field"><span>难度</span><select value={value.difficulty} onChange={(event) => patch("difficulty", event.target.value as Difficulty)}>{DIFFICULTIES.map((item) => <option key={item}>{item}</option>)}</select></label>
+            </div>
+            <ChoiceGroup title="适用餐次" options={MEALS.map((item) => item.value)} selected={value.meals} label={mealLabel} onChange={(items) => patch("meals", items as MealType[])} />
+            <ChoiceGroup title="口味" options={FLAVORS} selected={value.flavors} onChange={(items) => patch("flavors", items as Flavor[])} />
+            <ChoiceGroup title="标签" options={DEFAULT_TAGS} selected={value.tags} onChange={(items) => patch("tags", items)} />
+            <div className="custom-tag-row">
+              <input aria-label="自定义标签" value={customTag} onChange={(event) => setCustomTag(event.target.value)} placeholder="添加自定义标签" />
+              <button className="button-secondary" onClick={() => {
+                const tag = customTag.trim();
+                if (tag && !value.tags.includes(tag)) patch("tags", [...value.tags, tag]);
+                setCustomTag("");
+              }}>添加</button>
+            </div>
+          </section>
+          <section className="form-section">
+            <div className="section-title"><span>03</span><div><h3>食材</h3><p>用量按原菜谱记录，不随推荐人数自动换算。</p></div></div>
+            <div className="dynamic-list">
+              {value.ingredients.map((ingredient, index) => (
+                <div className="ingredient-row" key={ingredient.id}>
+                  <span className="row-index">{index + 1}</span>
+                  <input aria-label={`食材${index + 1}名称`} placeholder="食材" value={ingredient.name} onChange={(event) => {
+                    const next = [...value.ingredients]; next[index] = { ...ingredient, name: event.target.value }; patch("ingredients", next);
+                  }} />
+                  <input aria-label={`食材${index + 1}用量`} placeholder="用量" value={ingredient.amount} onChange={(event) => {
+                    const next = [...value.ingredients]; next[index] = { ...ingredient, amount: event.target.value }; patch("ingredients", next);
+                  }} />
+                  <input aria-label={`食材${index + 1}单位`} placeholder="单位" value={ingredient.unit} onChange={(event) => {
+                    const next = [...value.ingredients]; next[index] = { ...ingredient, unit: event.target.value }; patch("ingredients", next);
+                  }} />
+                  <button className="icon-button" onClick={() => patch("ingredients", value.ingredients.filter((_, i) => i !== index))}>×</button>
+                </div>
+              ))}
+              <button className="add-row" onClick={() => patch("ingredients", [...value.ingredients, { id: crypto.randomUUID(), name: "", amount: "", unit: "" }])}>＋ 添加食材</button>
+            </div>
+          </section>
+          <section className="form-section">
+            <div className="section-title"><span>04</span><div><h3>制作步骤</h3><p>按实际顺序记录，空步骤不会保存。</p></div></div>
+            <div className="dynamic-list">
+              {value.steps.map((step, index) => (
+                <div className="step-row" key={index}>
+                  <span className="row-index">{index + 1}</span>
+                  <textarea rows={2} aria-label={`步骤${index + 1}`} value={step} onChange={(event) => {
+                    const next = [...value.steps]; next[index] = event.target.value; patch("steps", next);
+                  }} placeholder="描述这一步怎么做" />
+                  <button className="icon-button" onClick={() => patch("steps", value.steps.filter((_, i) => i !== index))}>×</button>
+                </div>
+              ))}
+              <button className="add-row" onClick={() => patch("steps", [...value.steps, ""])}>＋ 添加步骤</button>
+            </div>
+          </section>
+        </div>
+        <footer className="drawer-footer"><button className="button-ghost" onClick={onCancel}>取消</button><button className="button-primary" onClick={onSave}>保存到本机</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function ImagePreview({ blob }: { blob: Blob }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    const next = URL.createObjectURL(blob); setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [blob]);
+  return url ? <img src={url} alt="待保存的菜品预览" /> : null;
+}
+
+function ChoiceGroup<T extends string>({
+  title,
+  options,
+  selected,
+  label,
+  onChange,
+}: {
+  title: string;
+  options: T[];
+  selected: T[];
+  label?: (value: T) => string;
+  onChange: (items: T[]) => void;
+}) {
+  return (
+    <fieldset className="choice-group"><legend>{title}</legend><div className="chip-row">
+      {options.map((option) => {
+        const active = selected.includes(option);
+        return <button type="button" className={active ? "chip-active" : ""} key={option} aria-pressed={active} onClick={() => onChange(active ? selected.filter((item) => item !== option) : [...selected, option])}>{label ? label(option) : option}</button>;
+      })}
+    </div></fieldset>
+  );
+}
+
+function RecipeDetail({ recipe, onClose, onEdit }: { recipe: Recipe; onClose: () => void; onEdit: () => void }) {
+  return (
+    <div className="modal-backdrop">
+      <section className="drawer detail-drawer" role="dialog" aria-modal="true" aria-label={`${recipe.name}详情`}>
+        <header className="drawer-header"><div><span className="eyebrow">{recipe.meals.map(mealLabel).join(" · ")}</span><h2>{recipe.name}</h2></div><button className="icon-button close-button" onClick={onClose}>×</button></header>
+        <div className="detail-content">
+          <ImageThumb recipe={recipe} large />
+          <div className="detail-stats"><span><b>{recipe.duration}</b>分钟</span><span><b>{recipe.difficulty}</b>难度</span><span><b>{recipe.dietType}</b>分类</span></div>
+          <p className="detail-description">{recipe.description}</p>
+          <div className="tag-row">{[...recipe.flavors, ...recipe.tags].map((tag) => <span key={tag}>#{tag}</span>)}</div>
+          <section><h3>准备食材</h3><ul className="ingredient-list">{recipe.ingredients.map((item) => <li key={item.id}><span>{item.name}</span><strong>{item.amount} {item.unit}</strong></li>)}</ul></section>
+          <section><h3>开始制作</h3><ol className="steps-list">{recipe.steps.map((step, index) => <li key={index}><span>{index + 1}</span><p>{step}</p></li>)}</ol></section>
+        </div>
+        <footer className="drawer-footer"><button className="button-ghost" onClick={onClose}>关闭</button><button className="button-primary" onClick={onEdit}>编辑菜谱</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function RecommendView({
+  recipes,
+  history,
+  onHistory,
+}: {
+  recipes: Recipe[];
+  history: RecommendationHistory[];
+  onHistory: (entry: RecommendationHistory) => Promise<void>;
+}) {
+  const [people, setPeople] = useState(2);
+  const [meal, setMeal] = useState<MealType>("dinner");
+  const [flavors, setFlavors] = useState<Flavor[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [result, setResult] = useState<ReturnType<typeof recommendRecipes>>();
+  const [fixedIds, setFixedIds] = useState<string[]>([]);
+  const [salt, setSalt] = useState(0.17);
+  const [selected, setSelected] = useState<Recipe>();
+  const availableTags = useMemo(
+    () => [...new Set([...DEFAULT_TAGS, ...recipes.flatMap((recipe) => recipe.tags)])],
+    [recipes],
+  );
+
+  async function run(nextSalt = Math.random(), nextFixed = fixedIds) {
+    const operationId = crypto.randomUUID();
+    const started = performance.now();
+    try {
+      const next = recommendRecipes(recipes, { people, meal, flavors, tags }, history, nextFixed, nextSalt);
+      setSalt(nextSalt);
+      setFixedIds(nextFixed);
+      setResult(next);
+      const entry: RecommendationHistory = { id: crypto.randomUUID(), recipeIds: next.recipes.map((item) => item.id), meal, createdAt: new Date().toISOString() };
+      await onHistory(entry);
+      await logger.info("recommendation", "generated", operationId, {
+        result: "success",
+        durationMs: Math.round(performance.now() - started),
+        message: `candidates=${recipes.length};selected=${next.recipes.length}`,
+      });
+    } catch (caught) {
+      const error = toAppError(caught, "RECOMMENDATION");
+      await logger.error("recommendation", "generate_failed", operationId, { errorCode: error.code, message: error.message });
+    }
+  }
+
+  function replaceRecipe(id: string) {
+    const keep = result?.recipes.filter((recipe) => recipe.id !== id).map((recipe) => recipe.id) || [];
+    void run(Math.random(), keep);
+  }
+
+  return (
+    <section className="page-section recommend-page">
+      <div className="page-heading"><div><span className="eyebrow">不用联网 · 规则在本机运行</span><h1>为这一餐搭几道菜</h1><p>按人数、餐次和口味，从你的菜谱中挑选合适组合。</p></div></div>
+      <div className="recommend-layout">
+        <div className="recommend-form panel">
+          <div className="recommend-number"><label>用餐人数</label><div className="stepper"><button onClick={() => setPeople(Math.max(1, people - 1))}>−</button><strong>{people}</strong><button onClick={() => setPeople(Math.min(20, people + 1))}>＋</button></div><small>默认推荐 {people + 1} 道菜</small></div>
+          <ChoiceGroup title="餐次" options={MEALS.map((item) => item.value)} selected={[meal]} label={mealLabel} onChange={(items) => setMeal((items.at(-1) || "dinner") as MealType)} />
+          <ChoiceGroup title="想吃的口味（可多选）" options={FLAVORS} selected={flavors} onChange={(items) => setFlavors(items as Flavor[])} />
+          <ChoiceGroup title="偏好标签（可多选）" options={availableTags} selected={tags} onChange={setTags} />
+          <button className="button-primary recommend-button" onClick={() => void run()}>生成本餐推荐 <span>→</span></button>
+        </div>
+        <div className="recommend-result">
+          {!result ? (
+            <div className="recommend-placeholder"><span>荐</span><h2>今晚的菜单，交给本地菜谱库</h2><p>选择左侧条件后生成推荐。你的偏好不会发送到任何服务器。</p></div>
+          ) : (
+            <>
+              <div className="result-heading"><div><span className="eyebrow">本餐建议 · {result.recipes.length} 道</span><h2>{people} 人的{mealLabel(meal)}菜单</h2><p>{result.reason}</p></div><button className="button-secondary" onClick={() => void run()}>整组重选</button></div>
+              <div className="recommend-cards">
+                {result.recipes.map((recipe, index) => {
+                  const fixed = fixedIds.includes(recipe.id);
+                  return (
+                    <article className="recommend-card" key={recipe.id}>
+                      <button className="recommend-card-main" onClick={() => setSelected(recipe)}>
+                        <span className="dish-number">{String(index + 1).padStart(2, "0")}</span>
+                        <div><div className="card-meta"><span>{recipe.dietType}</span><span>{recipe.duration}分钟</span></div><h3>{recipe.name}</h3><p>{[...recipe.flavors, ...recipe.tags].slice(0, 3).join(" · ")}</p></div>
+                      </button>
+                      <div className="recommend-card-actions"><button className={fixed ? "fixed" : ""} onClick={() => setFixedIds((current) => fixed ? current.filter((id) => id !== recipe.id) : [...current, recipe.id])}>{fixed ? "已固定" : "固定"}</button><button onClick={() => replaceRecipe(recipe.id)}>换一道</button></div>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      {selected && <RecipeDetail recipe={selected} onClose={() => setSelected(undefined)} onEdit={() => setSelected(undefined)} />}
+    </section>
+  );
+}
+
+function BackupView({
+  recipes,
+  settings,
+  history,
+  onImported,
+  onCleared,
+  onError,
+  refreshLogs,
+}: {
+  recipes: Recipe[];
+  settings: AppSettings;
+  history: RecommendationHistory[];
+  onImported: (recipes: Recipe[], history: RecommendationHistory[]) => void;
+  onCleared: () => void;
+  onError: (error: AppError) => void;
+  refreshLogs: () => Promise<void>;
+}) {
+  const [preview, setPreview] = useState<Awaited<ReturnType<typeof parseBackup>>>();
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [conflictStrategy, setConflictStrategy] = useState<"overwrite" | "keep" | "copy">("overwrite");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function exportData() {
+    const operationId = crypto.randomUUID();
+    const started = performance.now();
+    try {
+      const blob = await createBackup(recipes, settings, history);
+      downloadBlob(blob, `灶房菜谱备份-${new Date().toISOString().slice(0, 10)}.zip`);
+      await logger.info("backup", "export_success", operationId, {
+        result: "success",
+        durationMs: Math.round(performance.now() - started),
+        message: `records=${recipes.length};bytes=${blob.size}`,
+      });
+      await refreshLogs();
+    } catch (caught) {
+      const error = toAppError(caught, "BACKUP"); onError(error);
+      await logger.error("backup", "export_failed", operationId, { errorCode: error.code, message: error.message });
+    }
+  }
+
+  async function inspectFile(file?: File) {
+    if (!file) return;
+    const operationId = crypto.randomUUID();
+    try {
+      const parsed = await parseBackup(file);
+      setPreview(parsed);
+      await logger.info("backup", "import_validated", operationId, { result: "success", message: `records=${parsed.recipes.length};bytes=${file.size}` });
+      await refreshLogs();
+    } catch (caught) {
+      const error = toAppError(caught, "BACKUP"); onError(error);
+      await logger.error("backup", "import_validation_failed", operationId, { errorCode: error.code, message: error.message });
+    }
+  }
+
+  async function importData() {
+    if (!preview) return;
+    const current = new Map(recipes.map((item) => [item.id, item]));
+    let duplicates = 0;
+    for (const recipe of preview.recipes) {
+      if (!current.has(recipe.id)) {
+        current.set(recipe.id, recipe);
+        continue;
+      }
+      duplicates += 1;
+      if (conflictStrategy === "overwrite") current.set(recipe.id, recipe);
+      if (conflictStrategy === "copy") {
+        const now = new Date().toISOString();
+        const copyId = crypto.randomUUID();
+        current.set(copyId, {
+          ...recipe,
+          id: copyId,
+          name: `${recipe.name}（导入副本）`,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+    const next = [...current.values()];
+    try {
+      await recipeStore.replaceAll(next);
+      for (const item of preview.history) await historyStore.put(item);
+      onImported(next, [...history, ...preview.history]);
+      setPreview(undefined);
+      await logger.info("backup", "import_committed", undefined, { result: "success", message: `records=${preview.recipes.length};duplicates=${duplicates}` });
+      await refreshLogs();
+    } catch (caught) {
+      onError(toAppError(caught, "BACKUP"));
+    }
+  }
+
+  return (
+    <section className="page-section">
+      <div className="page-heading"><div><span className="eyebrow">可迁移 · 可恢复 · 不上云</span><h1>把数据掌握在自己手里</h1><p>用完整 ZIP 备份迁移菜谱和图片，API Key 与诊断日志不会被打包。</p></div></div>
+      <div className="backup-grid">
+        <article className="backup-card export-card"><span className="backup-icon">出</span><div><span className="eyebrow">完整备份</span><h2>导出本地数据</h2><p>包含 {recipes.length} 道菜谱、图片、标签和推荐历史。</p><ul><li>版本化 JSON 数据</li><li>原始菜品图片</li><li>不包含 API Key</li></ul><button className="button-primary" onClick={() => void exportData()}>导出 ZIP 备份</button></div></article>
+        <article className="backup-card import-card"><span className="backup-icon">入</span><div><span className="eyebrow">安全恢复</span><h2>导入备份文件</h2><p>先验证并预览，再决定是否写入本机。</p><input ref={fileRef} hidden type="file" accept=".zip,application/zip" onChange={(event) => void inspectFile(event.target.files?.[0])} /><button className="button-secondary" onClick={() => fileRef.current?.click()}>选择 ZIP 文件</button></div></article>
+      </div>
+      <div className="data-summary panel">
+        <div><span className="summary-number">{recipes.length}</span><span>本地菜谱</span></div>
+        <div><span className="summary-number">{recipes.filter((item) => item.image).length}</span><span>菜品图片</span></div>
+        <div><span className="summary-number">{history.length}</span><span>推荐记录</span></div>
+        <button className="danger-link" onClick={() => setConfirmClear(true)}>清空业务数据</button>
+      </div>
+      {preview && (
+        <div className="modal-backdrop">
+          <section className="confirm-card import-preview" role="dialog" aria-modal="true">
+            <span className="eyebrow">文件校验通过</span><h2>准备导入 {preview.recipes.length} 道菜谱</h2>
+            <p>备份创建于 {new Date(preview.manifest.createdAt).toLocaleString("zh-CN")}，包含 {preview.manifest.imageFiles.length} 张图片。请选择相同 ID 的处理方式。</p>
+            <label className="field"><span>冲突处理</span><select value={conflictStrategy} onChange={(event) => setConflictStrategy(event.target.value as typeof conflictStrategy)}><option value="overwrite">使用备份版本</option><option value="keep">保留本地版本</option><option value="copy">另存为副本</option></select></label>
+            <div className="button-row"><button className="button-ghost" onClick={() => setPreview(undefined)}>取消</button><button className="button-primary" onClick={() => void importData()}>确认导入</button></div>
+          </section>
+        </div>
+      )}
+      {confirmClear && <ConfirmDialog title="清空所有本地业务数据？" body="菜谱、图片和推荐历史都会被删除。建议先导出 ZIP 备份。" confirmLabel="确认清空" onCancel={() => setConfirmClear(false)} onConfirm={async () => { await clearBusinessData(); setConfirmClear(false); onCleared(); }} />}
+    </section>
+  );
+}
+
+function SettingsView({
+  settings,
+  logs,
+  onSettings,
+  refreshLogs,
+  onError,
+}: {
+  settings: AppSettings;
+  logs: LogEntry[];
+  onSettings: (settings: AppSettings) => Promise<void>;
+  refreshLogs: () => Promise<void>;
+  onError: (error: AppError) => void;
+}) {
+  const [draft, setDraft] = useState(settings);
+  const [filter, setFilter] = useState<"all" | "warn" | "error">("all");
+  const [testing, setTesting] = useState(false);
+  useEffect(() => setDraft(settings), [settings]);
+  const visibleLogs = logs.filter((entry) => filter === "all" || entry.level === filter);
+
+  async function testConnection() {
+    if (!draft.ai.apiKey || !draft.ai.endpoint || !draft.ai.model) {
+      onError(new AppError("VALIDATION", "请先填写接口地址、模型名和 API Key"));
+      return;
+    }
+    const operationId = crypto.randomUUID();
+    setTesting(true);
+    try {
+      const response = await fetch(draft.ai.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${draft.ai.apiKey}` },
+        body: JSON.stringify({ model: draft.ai.model, max_tokens: 1, messages: [{ role: "user", content: "回复OK" }] }),
+      });
+      if (!response.ok) throw new AppError("NETWORK", `连接失败：${response.status}`);
+      await logger.info("ai", "connection_test_success", operationId, { result: "success" });
+      alert("连接成功。图片能力仍取决于当前模型是否支持多模态输入。");
+    } catch (caught) {
+      const error = toAppError(caught, "NETWORK"); onError(error);
+      await logger.warn("ai", "connection_test_failed", operationId, { errorCode: error.code, message: error.message });
+    } finally {
+      setTesting(false); await refreshLogs();
+    }
+  }
+
+  function exportLogs() {
+    const safe = logs.map((entry) => ({ ...entry, message: entry.message?.slice(0, 240) }));
+    downloadBlob(new Blob([JSON.stringify(safe, null, 2)], { type: "application/json" }), `灶房诊断日志-${new Date().toISOString().slice(0, 10)}.json`);
+  }
+
+  return (
+    <section className="page-section">
+      <div className="page-heading"><div><span className="eyebrow">本地设置 · 随时可清除</span><h1>设置与问题排查</h1><p>配置图片解析服务，或查看不含菜谱正文与密钥的本地诊断记录。</p></div></div>
+      <div className="settings-grid">
+        <section className="panel settings-panel">
+          <div className="panel-heading"><div><span className="eyebrow">远程图片解析</span><h2>模型配置</h2></div><label className="switch"><input type="checkbox" checked={draft.ai.enabled} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, enabled: event.target.checked } })} /><span /></label></div>
+          <div className="privacy-note"><strong>发送边界</strong><p>启用后仅发送当次图片、补充文字和固定提示词。菜谱库、推荐历史和设置不会随请求发送。</p></div>
+          <label className="field"><span>兼容接口地址</span><input value={draft.ai.endpoint} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, endpoint: event.target.value } })} /></label>
+          <label className="field"><span>模型名</span><input value={draft.ai.model} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, model: event.target.value } })} placeholder="填写支持图片输入的模型" /></label>
+          <label className="field"><span>API Key</span><input type="password" autoComplete="off" value={draft.ai.apiKey} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, apiKey: event.target.value } })} placeholder="仅保存在当前浏览器" /></label>
+          <div className="button-row"><button className="button-secondary" disabled={testing} onClick={() => void testConnection()}>{testing ? "正在测试…" : "测试连接"}</button><button className="button-primary" onClick={() => void onSettings(draft)}>保存设置</button></div>
+        </section>
+        <section className="panel settings-panel">
+          <div className="panel-heading"><div><span className="eyebrow">只在本机</span><h2>调试模式</h2></div><label className="switch"><input type="checkbox" checked={draft.debugMode} onChange={(event) => { const next = { ...draft, debugMode: event.target.checked }; setDraft(next); void onSettings(next); }} /><span /></label></div>
+          <p>开启后记录更详细的操作阶段和耗时。日志固定保留最近 500 条，不会自动上传。</p>
+          <ul className="safe-list"><li>不会记录 API Key</li><li>不会记录图片或 ZIP 内容</li><li>不会记录完整菜谱正文</li></ul>
+          <div className="button-row"><button className="button-secondary" onClick={exportLogs}>下载脱敏日志</button><button className="danger-link" onClick={async () => { await logStore.clear(); await refreshLogs(); }}>清空日志</button></div>
+        </section>
+      </div>
+      <section className="panel log-panel">
+        <div className="panel-heading"><div><span className="eyebrow">最近 {logs.length} 条</span><h2>诊断记录</h2></div><div className="segmented">{(["all", "warn", "error"] as const).map((item) => <button className={filter === item ? "active" : ""} key={item} onClick={() => setFilter(item)}>{item === "all" ? "全部" : item === "warn" ? "警告" : "错误"}</button>)}</div></div>
+        <div className="log-list">
+          {visibleLogs.length ? visibleLogs.slice(0, 80).map((entry) => (
+            <div className={`log-row log-${entry.level}`} key={entry.id}>
+              <span className="log-level">{entry.level}</span>
+              <div><strong>{entry.module} · {entry.event}</strong><small>{new Date(entry.timestamp).toLocaleString("zh-CN")} · 操作 {entry.operationId.slice(0, 8)} {entry.durationMs ? `· ${entry.durationMs}ms` : ""}</small>{entry.message && <p>{entry.message}</p>}</div>
+              {entry.errorCode && <code>{entry.errorCode}</code>}
+            </div>
+          )) : <div className="empty-log">暂无符合条件的诊断记录</div>}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section className="confirm-card" role="alertdialog" aria-modal="true">
+        <span className="danger-symbol">!</span><h2>{title}</h2><p>{body}</p>
+        <div className="button-row"><button className="button-ghost" onClick={onCancel}>取消</button><button className="button-danger" onClick={() => void onConfirm()}>{confirmLabel}</button></div>
+      </section>
+    </div>
+  );
+}
