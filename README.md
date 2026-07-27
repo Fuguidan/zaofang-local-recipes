@@ -27,6 +27,20 @@ npm run test
 npm run build
 ```
 
+## Android APK
+
+Android 版本使用 Capacitor 封装，页面资源直接包含在 APK 内，不依赖网站托管。菜谱和图片保存在应用自己的本地数据目录中。
+
+生成可侧载的调试 APK：
+
+```bash
+export JAVA_HOME=/usr/local/opt/openjdk@21
+export ANDROID_HOME=/usr/local/share/android-commandlinetools
+npm run android:apk
+```
+
+输出文件为 `android/app/build/outputs/apk/debug/app-debug.apk`。发送到 Android 手机后，允许当前文件管理器“安装未知应用”即可安装。卸载应用或清除应用数据会删除手机中的菜谱，操作前请先在“数据管家”导出 ZIP。
+
 ## 使用流程
 
 1. 在“我的菜谱”中添加、编辑或删除菜谱；无 API Key 时图片和原始文字仍可直接保存。

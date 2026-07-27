@@ -9,6 +9,7 @@
 - `test(app): 完成核心功能综合验收`：覆盖推荐、ZIP、隐私、渲染和浏览器端菜谱生命周期。
 - `chore(hosting): 绑定生产站点`：保存托管项目标识，数据绑定保持为空。
 - `feat(android): 接入Capacitor原生应用`：增加 Android 静态构建入口、Capacitor 配置及原生工程。
+- `build(android): 生成并校验调试APK`：完成 Android 36 构建、签名和内置资源检查。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -87,6 +88,6 @@
 - 目标：不依赖网站托管，将现有本地优先应用封装成可侧载的 Android APK。
 - 修改：接入 Capacitor 8，增加独立 Vite 静态构建入口、`cn.zaofang.recipes` 原生应用配置、Android 工程和一键同步/调试 APK 脚本。
 - 决策：Android WebView 直接加载 APK 内置资源；IndexedDB 数据保留在手机应用沙盒；APK 和本地 SDK 配置不进入 Git。
-- 测试：Android Web 静态包生产构建通过；Capacitor 资源同步通过。
-- 已知问题：首次本机构建需要用户本人接受 Google Android SDK License，接受前无法下载 Android 36 平台并产出 APK。
-- 下一步：用户接受 SDK License 后安装 Android 36 编译组件，执行 Gradle 构建并校验 APK。
+- 测试：Android Web 静态包生产构建、Capacitor 资源同步和 Gradle `assembleDebug` 均通过；APK 包名、版本、最低系统、v2 签名和内置 JS/CSS/HTML 资源检查通过。
+- 已知问题：当前交付物使用 Android 调试证书，适合直接安装测试；面向应用商店或长期分发时需要由项目所有者保管正式发布密钥。
+- 下一步：在至少一台 Android 7+ 真机上完成安装、菜谱生命周期、ZIP 恢复和离线启动验收。
