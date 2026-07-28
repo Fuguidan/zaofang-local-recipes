@@ -1,0 +1,250 @@
+# 灶房运行与打包环境说明
+
+本文记录当前项目在 MacBook 上的运行环境、安装位置、安装方式、启动命令，以及 Android / iOS 打包方式。
+
+## 1. Xcode 是什么
+
+Xcode 是 Apple 官方的开发工具，作用类似 Android 开发里的 Android Studio 加 SDK。做 iOS 应用时，Xcode 负责：
+
+- 提供 iOS SDK、模拟器和真机调试能力。
+- 打开 Capacitor 生成的 iOS 原生工程。
+- 管理 iPhone 真机运行、签名证书、App ID 和打包归档。
+- 导出可安装或可提交 App Store / TestFlight 的 iOS 包。
+
+简单说：Capacitor 负责把 Web 应用接进 iOS 原生壳，Xcode 负责把这个原生工程编译、签名、安装或导出。
+
+## 2. Xcode 安装方式
+
+推荐方式：
+
+1. 打开 Mac 的 App Store。
+2. 搜索 `Xcode`。
+3. 点击获取或安装。
+4. 安装完成后打开一次 Xcode，按提示接受许可协议并安装附加组件。
+
+也可以从 Apple Developer 网站下载指定版本：
+
+1. 打开 `https://developer.apple.com/download/all/`。
+2. 使用 Apple ID 登录。
+3. 搜索 `Xcode`，下载需要的版本。
+4. 解压并放到 `/Applications/Xcode.app`。
+
+安装后建议执行：
+
+```bash
+xcodebuild -version
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license
+```
+
+如果只是在模拟器运行，一般有 Apple ID 即可。若要安装到真机、导出 IPA、使用 TestFlight 或上架 App Store，需要配置 Apple Developer 账号、签名证书和 Team。
+
+## 3. 当前项目位置
+
+项目目录：
+
+```bash
+/Users/wuyangjun/fuguidan/code/caipu
+```
+
+关键文件：
+
+- `package.json`：项目依赖和常用脚本。
+- `package-lock.json`：精确依赖版本。
+- `capacitor.config.ts`：Capacitor 应用配置。
+- `vite.capacitor.config.ts`：Android / iOS 原生壳使用的静态 Web 构建配置。
+- `android/`：已生成的 Android 原生工程。
+- `artifacts/zaofang-android-debug.apk`：当前已生成的 Android 调试安装包。
+
+当前还没有生成 `ios/` 目录。只有执行 `npx cap add ios` 后，才会出现 iOS 原生工程。
+
+## 4. 当前本机环境位置
+
+Codex 当前使用的 Node.js：
+
+```bash
+/Users/wuyangjun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node
+```
+
+当前已确认版本：
+
+```bash
+node v24.14.0
+npm 10.8.2
+```
+
+Java / JDK：
+
+```bash
+/usr/local/opt/openjdk@21
+```
+
+当前已确认版本：
+
+```bash
+OpenJDK 21.0.12
+```
+
+Android SDK：
+
+```bash
+/usr/local/share/android-commandlinetools
+```
+
+当前已确认安装包：
+
+```text
+build-tools;35.0.0
+build-tools;36.0.0
+platform-tools;37.0.0
+platforms;android-36
+```
+
+查看本机安装内容：
+
+```bash
+cd /Users/wuyangjun/fuguidan/code/caipu
+
+npm ls --depth=0
+brew list --versions openjdk@21
+JAVA_HOME=/usr/local/opt/openjdk@21 ANDROID_HOME=/usr/local/share/android-commandlinetools \
+  /usr/local/share/android-commandlinetools/cmdline-tools/latest/bin/sdkmanager --list_installed
+```
+
+## 5. 环境安装方式
+
+安装项目依赖：
+
+```bash
+cd /Users/wuyangjun/fuguidan/code/caipu
+npm install
+```
+
+如果系统 Node.js 低于 22.13，可以临时使用 Codex 缓存的 Node.js：
+
+```bash
+export PATH="/Users/wuyangjun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH"
+```
+
+安装 Android 打包依赖的参考命令：
+
+```bash
+brew install openjdk@21 android-commandlinetools
+
+export JAVA_HOME=/usr/local/opt/openjdk@21
+export ANDROID_HOME=/usr/local/share/android-commandlinetools
+
+yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+  "platform-tools" \
+  "platforms;android-36" \
+  "build-tools;36.0.0"
+```
+
+说明：接受 Android SDK License 需要由使用者确认。不要把 API Key、签名密钥、用户菜谱 ZIP 或日志文件提交到 Git。
+
+## 6. MacBook 本地运行
+
+启动开发环境：
+
+```bash
+cd /Users/wuyangjun/fuguidan/code/caipu
+export PATH="/Users/wuyangjun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH"
+npm install
+npm run dev
+```
+
+常用检查：
+
+```bash
+npm run typecheck
+npm run test
+npm run build
+```
+
+生产预览：
+
+```bash
+npm run build
+npm run start
+```
+
+## 7. Android APK 打包
+
+Android 版本使用 Capacitor 封装，Web 页面资源直接包含在 APK 内，不依赖网站托管。菜谱、图片、设置和诊断日志保存在 Android 应用自己的本地数据目录中。
+
+生成可侧载安装的调试 APK：
+
+```bash
+cd /Users/wuyangjun/fuguidan/code/caipu
+export PATH="/Users/wuyangjun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH"
+export JAVA_HOME=/usr/local/opt/openjdk@21
+export ANDROID_HOME=/usr/local/share/android-commandlinetools
+
+npm run android:apk
+```
+
+输出文件：
+
+```bash
+android/app/build/outputs/apk/debug/app-debug.apk
+artifacts/zaofang-android-debug.apk
+```
+
+安装到 Android 手机：
+
+1. 把 `artifacts/zaofang-android-debug.apk` 发送到手机。
+2. 在手机文件管理器中打开 APK。
+3. 按系统提示允许该来源“安装未知应用”。
+4. 安装后即可离线使用本地菜谱、推荐、ZIP 导入导出和诊断面板。
+
+注意：当前 APK 使用 Android 调试证书，适合测试和小范围自用。正式长期分发或上架应用商店时，需要生成 release 包并使用项目所有者保管的正式签名密钥。
+
+## 8. iOS 工程与 IPA 打包
+
+前置条件：
+
+- 已安装 Xcode。
+- 已打开 Xcode 并完成首次组件安装。
+- 如需真机安装或导出 IPA，需要配置 Apple Developer 账号和签名 Team。
+
+首次生成 iOS 工程：
+
+```bash
+cd /Users/wuyangjun/fuguidan/code/caipu
+export PATH="/Users/wuyangjun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH"
+
+npm install @capacitor/ios
+npx cap add ios
+npm run build:android:web
+npx cap sync ios
+npx cap open ios
+```
+
+后续同步 Web 改动到 iOS：
+
+```bash
+cd /Users/wuyangjun/fuguidan/code/caipu
+export PATH="/Users/wuyangjun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH"
+
+npm run build:android:web
+npx cap sync ios
+npx cap open ios
+```
+
+在 Xcode 中运行或打包：
+
+1. 打开 `ios/App/App.xcworkspace`。
+2. 选择 `App` target。
+3. 在 `Signing & Capabilities` 中选择 Team。
+4. 连接 iPhone 或选择模拟器后点击运行。
+5. 如需导出 IPA，选择 `Product > Archive`，归档完成后通过 Organizer 导出。
+
+说明：iOS 不像 Android 那样可以随意侧载 APK。真机安装和 IPA 分发通常都需要 Apple 签名体系支持。
+
+## 9. 数据安全提醒
+
+- 卸载 Android / iOS 应用或清除应用数据，会删除手机本地菜谱。
+- 换手机、重装应用、清除数据前，请先在应用的“数据管家”导出 ZIP。
+- ZIP 业务备份不包含 API Key、诊断日志和错误堆栈。
+- 诊断日志只在本机保存，不自动上传。

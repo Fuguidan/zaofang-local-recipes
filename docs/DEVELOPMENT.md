@@ -10,6 +10,7 @@
 - `chore(hosting): 绑定生产站点`：保存托管项目标识，数据绑定保持为空。
 - `feat(android): 接入Capacitor原生应用`：增加 Android 静态构建入口、Capacitor 配置及原生工程。
 - `build(android): 生成并校验调试APK`：完成 Android 36 构建、签名和内置资源检查。
+- `docs(environment): 补充本机运行与移动端打包说明`：记录 Node、JDK、Android SDK、Xcode、运行和打包命令。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -91,3 +92,12 @@
 - 测试：Android Web 静态包生产构建、Capacitor 资源同步和 Gradle `assembleDebug` 均通过；APK 包名、版本、最低系统、v2 签名和内置 JS/CSS/HTML 资源检查通过。
 - 已知问题：当前交付物使用 Android 调试证书，适合直接安装测试；面向应用商店或长期分发时需要由项目所有者保管正式发布密钥。
 - 下一步：在至少一台 Android 7+ 真机上完成安装、菜谱生命周期、ZIP 恢复和离线启动验收。
+
+## 2026-07-28 · 环境文档补充
+
+- 目标：把当前运行环境、安装位置、安装方式、启动命令、Android 打包和 iOS/Xcode 打包流程固化到文档。
+- 修改：新增 `docs/ENVIRONMENT.md`，补充 README 文档入口。
+- 决策：iOS 部分先记录 Capacitor iOS 工程生成与 Xcode 归档流程，不在未安装 Xcode 的情况下生成 `ios/` 工程。
+- 测试：文档变更，不涉及运行时代码；执行类型检查确认项目配置仍可通过。
+- 已知问题：当前 Mac 尚未配置可用 Xcode，iOS 真机安装和 IPA 导出需要后续完成 Apple 签名配置。
+- 下一步：如需要 iOS 包，先安装 Xcode，再接入 `@capacitor/ios` 并生成 iOS 工程。
