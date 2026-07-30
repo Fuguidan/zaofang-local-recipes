@@ -16,6 +16,7 @@
 - `fix(android): 使用原生解码修复HEIC预览与AI生成`：增加 Android Capacitor 原生插件，优先将 HEIC 转为 JPEG。
 - `fix(ai): 增强图片解析错误分类与诊断`：细分 AI 请求失败类型，增加图片能力测试和用户可执行建议。
 - `fix(ai): 增加本机开发代理修复Web端CORS`：localhost Web 测试自动走 Vite 本机代理转发模型请求。
+- `fix(ai): 兼容常见模型文本响应格式`：支持 Chat Completions 和 Responses 常见文本输出位置。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -151,3 +152,12 @@
 - 测试：新增 localhost 代理路由、Capacitor 不代理、非本机不代理和生成请求使用代理的单元测试。
 - 已知问题：静态网页或未启动开发服务器时仍无法绕过浏览器 CORS；如需给别人 Web 使用，需要模型服务自身支持 CORS、使用 APK，或由用户明确接受部署自己的代理。
 - 下一步：用真实模型配置在 `npm run dev` 页面中分别执行文本连接测试、图片能力测试和菜谱智能生成。
+
+## 2026-07-31 · 模型响应格式兼容
+
+- 目标：修复接口已返回 JSON 但文本不在 `choices[0].message.content` 时被误判为不可兼容的问题。
+- 修改：新增统一模型文本提取逻辑，兼容 `choices[].message.content` 字符串、`message.content` 文本块数组、`choices[].text`、Responses API 风格 `output_text` 和 `output[].content[].text`。
+- 决策：只提取响应中的文本位置，不记录完整响应；若提取到文本但不是菜谱 JSON，仍保留为 `bad_recipe_json`，方便区分“接口格式问题”和“模型内容问题”。
+- 测试：新增 Chat Completions 变体和 Responses API 变体单元测试；领域测试通过。
+- 已知问题：如果模型服务返回完全自定义字段，需要根据该服务实际响应再扩展映射。
+- 下一步：用真实接口重新执行“测试文本连接”“测试图片能力”和菜谱智能生成。

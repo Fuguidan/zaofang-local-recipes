@@ -27,7 +27,7 @@ const failureSuggestions: Record<AIFailure, string> = {
   cors_or_network: "浏览器无法连接模型接口。Web 端常见原因是 CORS 拦截、网络不可达或接口地址错误。",
   vision_not_supported: "接口可连接，但当前模型或服务不支持图片输入。请换支持视觉的模型，或只填写菜名生成。",
   bad_response_json: "接口返回的内容不是 JSON，请确认接口地址是 OpenAI-compatible Chat Completions。",
-  bad_model_payload: "接口返回格式不是 OpenAI-compatible 的 choices[0].message.content。",
+  bad_model_payload: "接口返回格式不包含可识别的模型文本内容，请确认接口兼容 Chat Completions 或 Responses 文本输出。",
   bad_recipe_json: "模型返回了内容，但不是可解析的菜谱 JSON。请换模型或调整模型输出格式。",
 };
 
@@ -175,19 +175,68 @@ export async function generateRecipeDraft({
     const text = await response.text().catch(() => "");
     throw classifyHttpError(response.status, text);
   }
-  let body: { choices?: Array<{ message?: { content?: string } }> };
+  let body: unknown;
   try {
-    body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    body = await response.json();
   } catch (error) {
     throw new AIRequestError("bad_response_json", "接口返回的内容不是 JSON", response.status, error);
   }
-  const content = body.choices?.[0]?.message?.content?.replace(/^```json\s*|\s*```$/g, "");
-  if (!content) throw new AIRequestError("bad_model_payload", "模型未返回 choices[0].message.content", response.status);
+  const content = stripJsonFence(extractModelContent(body));
+  if (!content) throw new AIRequestError("bad_model_payload", "模型未返回可识别的文本内容", response.status);
   try {
     return normalizeDraft(JSON.parse(content) as Partial<RecipeInput>);
   } catch (error) {
     throw new AIRequestError("bad_recipe_json", "模型响应不是有效菜谱 JSON", response.status, error);
   }
+}
+
+function extractModelContent(body: unknown): string {
+  if (!isRecord(body)) return "";
+  const outputText = firstString(body.output_text);
+  if (outputText) return outputText;
+  const choices = Array.isArray(body.choices) ? body.choices : [];
+  for (const choice of choices) {
+    if (!isRecord(choice)) continue;
+    const message = isRecord(choice.message) ? choice.message : undefined;
+    const messageContent = extractContentValue(message?.content);
+    if (messageContent) return messageContent;
+    const choiceText = firstString(choice.text);
+    if (choiceText) return choiceText;
+  }
+  const output = Array.isArray(body.output) ? body.output : [];
+  for (const item of output) {
+    if (!isRecord(item)) continue;
+    const outputContent = extractContentValue(item.content);
+    if (outputContent) return outputContent;
+  }
+  return "";
+}
+
+function extractContentValue(value: unknown): string {
+  const direct = firstString(value);
+  if (direct) return direct;
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (!isRecord(part)) return "";
+      return firstString(part.text) || firstString(part.content);
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function firstString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function stripJsonFence(content: string) {
+  return content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function classifyHttpError(status: number, text: string) {

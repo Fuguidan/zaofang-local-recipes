@@ -180,6 +180,7 @@ AI 生成使用规则：
 - MacBook 本机 Web 开发环境通过 `npm run dev` 启动时，AI 请求会自动走本机开发代理，浏览器只访问 `localhost`，由本机开发服务器转发到模型接口，用于规避常见 CORS 拦截。
 - 静态网页、非本机地址或没有运行开发服务器时不能使用上述代理；遇到 `cors_or_network` 时，请确认是否正在用 `npm run dev` 打开页面，并检查接口地址、网络和模型服务是否允许当前访问方式。
 - 遇到 `vision_not_supported` 时，说明接口可连接但当前模型或服务不支持图片输入，请换支持视觉的模型或只用菜名生成。
+- 遇到 `bad_model_payload` 时，说明接口返回 JSON 中没有可识别的模型文本内容。当前兼容 `choices[].message.content`、`choices[].text`、`output_text` 和 `output[].content[].text`；如果仍失败，请确认接口是否为 Chat Completions/Responses 兼容格式。
 - Android APK 上传 HEIC/HEIF 图片时会先尝试 Android 原生转换为 JPEG，用于预览、保存、AI 生成和 ZIP 备份。
 - Web 环境会继续尝试浏览器原生解码和 `heic2any` 转换。
 - 如果 HEIC/HEIF 转换失败，应用会保留原始图片并允许保存菜谱；该图片不会发送给模型，可填写菜名走文本生成。

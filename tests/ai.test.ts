@@ -32,6 +32,8 @@ const aiResponse = {
   ],
 };
 
+const recipeJson = aiResponse.choices[0].message.content;
+
 test("does not call AI when generation is disabled", async () => {
   let calls = 0;
   const originalFetch = globalThis.fetch;
@@ -66,6 +68,42 @@ test("generates recipe draft from dish name only", async () => {
     assert.match(String(body.messages[1].content), /菜品名称：番茄炒蛋/);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("accepts OpenAI-compatible text completion payload variants", async () => {
+  const variants = [
+    { choices: [{ text: recipeJson }] },
+    { choices: [{ message: { content: [{ type: "text", text: recipeJson }] } }] },
+    { choices: [{ message: { content: [{ type: "output_text", text: recipeJson }] } }] },
+  ];
+  for (const variant of variants) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify(variant), { status: 200 })) as typeof fetch;
+    try {
+      const draft = await generateRecipeDraft({ name: "番茄炒蛋", config: enabledConfig });
+      assert.equal(draft.name, "番茄炒蛋");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+});
+
+test("accepts Responses API style output text payloads", async () => {
+  const variants = [
+    { output_text: recipeJson },
+    { output: [{ content: [{ type: "output_text", text: recipeJson }] }] },
+    { output: [{ content: [{ type: "text", text: recipeJson }] }] },
+  ];
+  for (const variant of variants) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify(variant), { status: 200 })) as typeof fetch;
+    try {
+      const draft = await generateRecipeDraft({ name: "番茄炒蛋", config: enabledConfig });
+      assert.equal(draft.ingredients?.[0].name, "番茄");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   }
 });
 
