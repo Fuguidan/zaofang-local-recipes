@@ -11,6 +11,7 @@
 - `feat(android): 接入Capacitor原生应用`：增加 Android 静态构建入口、Capacitor 配置及原生工程。
 - `build(android): 生成并校验调试APK`：完成 Android 36 构建、签名和内置资源检查。
 - `docs(environment): 补充本机运行与移动端打包说明`：记录 Node、JDK、Android SDK、Xcode、运行和打包命令。
+- `feat(ai): 支持菜名生成与HEIC图片处理`：增加手动触发 AI 生成、HEIC 转 JPEG 和非密钥环境默认配置。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -101,3 +102,12 @@
 - 测试：文档变更，不涉及运行时代码；执行类型检查确认项目配置仍可通过。
 - 已知问题：当前 Mac 尚未配置可用 Xcode，iOS 真机安装和 IPA 导出需要后续完成 Apple 签名配置。
 - 下一步：如需要 iOS 包，先安装 Xcode，再接入 `@capacitor/ios` 并生成 iOS 工程。
+
+## 2026-07-30 · AI 生成触发规则与 HEIC 支持
+
+- 目标：AI 只在用户开启设置、填写菜名或上传图片、并主动点击“智能生成”后调用；支持 Apple HEIC/HEIF 图片录入。
+- 修改：新增统一 AI 生成入口，支持图片加文字和菜名-only；上传 HEIC/HEIF 后本机转换为 JPEG；设置页明确“允许使用 AI 生成”；`.env` 只预填 endpoint、model 和 enabled。
+- 决策：API Key 不从 `.env` 注入前端或 APK，仍由用户在设置页手填；AI 结果只进入编辑表单，保存前不写入本地数据库。
+- 测试：新增 AI 触发边界、菜名生成、图文生成和 HEIC/HEIF 识别测试；全部领域测试通过。
+- 已知问题：真实 HEIC 解码依赖浏览器运行环境和 `heic2any`，需要在 iPhone 或含 HEIC 样本的浏览器流程中验收。
+- 下一步：用真机照片验证 HEIC 上传、转换、智能生成、保存、ZIP 导出导入和 Android APK 打包。

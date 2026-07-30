@@ -19,7 +19,8 @@ import { AppError, toAppError } from "../lib/errors";
 import { logger } from "../lib/logger";
 import { recommendRecipes } from "../lib/recommendation";
 import { createBackup, parseBackup } from "../lib/backup";
-import { parseRecipeImage } from "../lib/ai";
+import { generateRecipeDraft } from "../lib/ai";
+import { isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
 type EditorMode = "create" | "edit";
@@ -457,19 +458,34 @@ function RecipeEditor({
   const [customTag, setCustomTag] = useState("");
   const patch = <K extends keyof RecipeInput>(key: K, next: RecipeInput[K]) => onChange({ ...value, [key]: next });
 
-  async function parseImage() {
-    if (!value.image) return;
-    if (!settings.ai.enabled || !settings.ai.apiKey) {
-      setParseNotice("尚未配置 API Key，无法自动解析。图片和文字仍可原样保存。");
+  async function generateDraft() {
+    const hasName = Boolean(value.name.trim());
+    const source = value.image ? "image" : "name";
+    if (!value.image && !hasName) {
+      setParseNotice("请先上传图片或填写菜名，再点击智能生成。");
+      return;
+    }
+    if (!settings.ai.enabled) {
+      setParseNotice("设置中尚未打开“允许使用 AI 生成”，不会调用模型。");
+      return;
+    }
+    if (!settings.ai.endpoint || !settings.ai.model || !settings.ai.apiKey) {
+      setParseNotice("请先在设置中填写接口地址、模型名和 API Key。");
       return;
     }
     const operationId = crypto.randomUUID();
     const started = performance.now();
     abortRef.current = new AbortController();
     setParsing(true);
-    setParseNotice("图片只会在本次解析中发送，正在等待模型返回…");
+    setParseNotice(value.image ? "仅发送当前图片和本次文字，正在等待模型返回…" : "仅发送本次菜名和补充文字，正在等待模型返回…");
     try {
-      const parsed = await parseRecipeImage(value.image, value.description, settings.ai, abortRef.current.signal);
+      const parsed = await generateRecipeDraft({
+        image: value.image,
+        name: value.name,
+        description: value.description,
+        config: settings.ai,
+        signal: abortRef.current.signal,
+      });
       onChange({
         ...value,
         ...parsed,
@@ -478,7 +494,7 @@ function RecipeEditor({
         ingredients: (parsed.ingredients || value.ingredients).map((item) => ({ ...item, id: item.id || crypto.randomUUID() })),
       });
       setParseNotice("解析完成，请检查并修改结果后再保存。");
-      await logger.info("ai", "image_parse_success", operationId, { result: "success", durationMs: Math.round(performance.now() - started) });
+      await logger.info("ai", "recipe_generate_success", operationId, { result: "success", stage: source, durationMs: Math.round(performance.now() - started) });
     } catch (caught) {
       const error = toAppError(caught, "NETWORK");
       if (abortRef.current?.signal.aborted) setParseNotice("已取消解析，原始图片和文字仍在。");
@@ -486,7 +502,8 @@ function RecipeEditor({
         onError(error);
         setParseNotice("解析失败，原始图片和文字已保留，可直接保存。");
       }
-      await logger.warn("ai", "image_parse_failed", operationId, {
+      await logger.warn("ai", "recipe_generate_failed", operationId, {
+        stage: source,
         errorCode: error.code,
         message: error.message,
         durationMs: Math.round(performance.now() - started),
@@ -505,21 +522,33 @@ function RecipeEditor({
         </header>
         <div className="editor-content">
           <section className="form-section image-upload-section">
-            <div className="section-title"><span>01</span><div><h3>菜品图片与说明</h3><p>没有 API Key 也可以原样保存，稍后再完善。</p></div></div>
+            <div className="section-title"><span>01</span><div><h3>菜品图片与说明</h3><p>AI 生成需要先在设置中开启，并由你点击按钮触发。</p></div></div>
             <label className="image-drop">
-              {value.image ? <ImagePreview blob={value.image} /> : <span className="upload-placeholder"><b>＋</b>选择或拍摄菜品图片<small>支持 JPG、PNG、WebP</small></span>}
-              <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => {
+              {value.image ? <ImagePreview blob={value.image} /> : <span className="upload-placeholder"><b>＋</b>选择或拍摄菜品图片<small>支持 JPG、PNG、WebP、HEIC</small></span>}
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" capture="environment" onChange={(event) => {
+                const input = event.currentTarget;
                 const file = event.target.files?.[0];
-                if (file) onChange({ ...value, image: file, imageName: file.name });
+                if (file) void (async () => {
+                  try {
+                    setParseNotice(isHeicImage(file) ? "正在将 HEIC 图片转换为 JPEG…" : "");
+                    const normalized = await normalizeRecipeImageFile(file);
+                    onChange({ ...value, image: normalized, imageName: normalized.name });
+                    if (isHeicImage(file)) setParseNotice("HEIC 图片已在本机转换为 JPEG，可继续保存或智能生成。");
+                  } catch (caught) {
+                    const error = toAppError(caught, "IMAGE");
+                    onError(error);
+                    setParseNotice(error.message);
+                  } finally {
+                    input.value = "";
+                  }
+                })();
               }} />
             </label>
             <label className="field"><span>原始说明</span><textarea rows={3} value={value.description} onChange={(event) => patch("description", event.target.value)} placeholder="例如：外婆做的红烧肉，偏甜口……" /></label>
-            {value.image && (
-              <div className="parse-panel">
-                <div><strong>图片智能解析</strong><small>{settings.ai.enabled && settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"}` : "尚未配置 API Key"}</small></div>
-                {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消解析</button> : <button className="button-secondary" onClick={() => void parseImage()}>自动解析</button>}
-              </div>
-            )}
+            <div className="parse-panel">
+              <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"}` : "尚未配置 API Key") : "设置中未开启"}</small></div>
+              {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消生成</button> : <button className="button-secondary" disabled={!value.image && !value.name.trim()} onClick={() => void generateDraft()}>智能生成</button>}
+            </div>
             {parseNotice && <p className="inline-notice">{parseNotice}</p>}
           </section>
           <section className="form-section">
@@ -895,8 +924,8 @@ function SettingsView({
       <div className="page-heading"><div><span className="eyebrow">本地设置 · 随时可清除</span><h1>设置与问题排查</h1><p>配置图片解析服务，或查看不含菜谱正文与密钥的本地诊断记录。</p></div></div>
       <div className="settings-grid">
         <section className="panel settings-panel">
-          <div className="panel-heading"><div><span className="eyebrow">远程图片解析</span><h2>模型配置</h2></div><label className="switch"><input type="checkbox" checked={draft.ai.enabled} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, enabled: event.target.checked } })} /><span /></label></div>
-          <div className="privacy-note"><strong>发送边界</strong><p>启用后仅发送当次图片、补充文字和固定提示词。菜谱库、推荐历史和设置不会随请求发送。</p></div>
+          <div className="panel-heading"><div><span className="eyebrow">远程智能生成</span><h2>模型配置</h2></div><label className="switch"><input type="checkbox" checked={draft.ai.enabled} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, enabled: event.target.checked } })} /><span /></label></div>
+          <div className="privacy-note"><strong>允许使用 AI 生成</strong><p>关闭时不会发起任何模型请求。开启后，也只有在菜谱编辑页上传图片或填写菜名，并点击“智能生成”才会调用模型。</p></div>
           <label className="field"><span>兼容接口地址</span><input value={draft.ai.endpoint} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, endpoint: event.target.value } })} /></label>
           <label className="field"><span>模型名</span><input value={draft.ai.model} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, model: event.target.value } })} placeholder="填写支持图片输入的模型" /></label>
           <label className="field"><span>API Key</span><input type="password" autoComplete="off" value={draft.ai.apiKey} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, apiKey: event.target.value } })} placeholder="仅保存在当前浏览器" /></label>

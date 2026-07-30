@@ -84,8 +84,18 @@ export const recipeStore = {
 
 const defaultSettings: AppSettings = {
   debugMode: false,
-  ai: { endpoint: "https://api.deepseek.com/chat/completions", model: "", apiKey: "", enabled: false },
+  ai: {
+    endpoint: envValue("VITE_AI_ENDPOINT") || "https://api.deepseek.com/chat/completions",
+    model: envValue("VITE_AI_MODEL"),
+    apiKey: "",
+    enabled: envValue("VITE_AI_ENABLED") === "true",
+  },
 };
+
+function envValue(key: string) {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  return env?.[key]?.trim() || "";
+}
 
 export const settingsStore = {
   get: async () =>

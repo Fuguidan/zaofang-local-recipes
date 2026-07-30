@@ -1,10 +1,21 @@
 import type { AIProviderConfig, RecipeInput } from "./types";
-import { AppError } from "./errors";
+import { AppError } from "./errors.ts";
 
-const SYSTEM_PROMPT = `你是菜谱结构化助手。根据图片和补充文字，仅返回JSON：
+const SYSTEM_PROMPT = `你是菜谱结构化助手。根据用户提供的菜品图片、菜品名称或补充文字生成菜谱草稿，仅返回JSON：
 {"name":"","description":"","ingredients":[{"name":"","amount":"","unit":"","note":""}],"steps":[""],"meals":["breakfast|lunch|dinner"],"flavors":["清淡|辛辣|酸甜|咸鲜|麻辣|鲜香"],"tags":[],"dietType":"荤菜|素菜|主食|汤羹","duration":30,"difficulty":"简单|适中|进阶"}。不要返回Markdown。`;
 
+const MEALS = new Set(["breakfast", "lunch", "dinner"]);
+const FLAVORS = new Set(["清淡", "辛辣", "酸甜", "咸鲜", "麻辣", "鲜香"]);
+const DIET_TYPES = new Set(["荤菜", "素菜", "主食", "汤羹"]);
+const DIFFICULTIES = new Set(["简单", "适中", "进阶"]);
+
 function readAsDataUrl(file: Blob) {
+  if (typeof FileReader === "undefined") {
+    return file.arrayBuffer().then((buffer) => {
+      const base64 = Buffer.from(buffer).toString("base64");
+      return `data:${file.type || "application/octet-stream"};base64,${base64}`;
+    });
+  }
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
@@ -19,10 +30,34 @@ export async function parseRecipeImage(
   config: AIProviderConfig,
   signal?: AbortSignal,
 ): Promise<Partial<RecipeInput>> {
+  return generateRecipeDraft({ image, description, config, signal });
+}
+
+export async function generateRecipeDraft({
+  image,
+  name,
+  description,
+  config,
+  signal,
+}: {
+  image?: Blob;
+  name?: string;
+  description?: string;
+  config: AIProviderConfig;
+  signal?: AbortSignal;
+}): Promise<Partial<RecipeInput>> {
   if (!config.enabled || !config.apiKey || !config.endpoint || !config.model) {
-    throw new AppError("NETWORK", "未配置或未启用图片解析");
+    throw new AppError("NETWORK", "未配置或未启用 AI 生成");
   }
-  const dataUrl = await readAsDataUrl(image);
+  if (!image && !name?.trim()) {
+    throw new AppError("VALIDATION", "请先上传图片或填写菜名");
+  }
+  const dataUrl = image ? await readAsDataUrl(image) : undefined;
+  const text = [
+    name?.trim() ? `菜品名称：${name.trim()}` : "",
+    description?.trim() ? `补充说明：${description.trim()}` : "",
+    image ? "请结合图片生成菜谱草稿。" : "请根据菜品名称生成菜谱草稿。",
+  ].filter(Boolean).join("\n");
   let response: Response;
   try {
     response = await fetch(config.endpoint, {
@@ -35,10 +70,12 @@ export async function parseRecipeImage(
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
-            content: [
-              { type: "text", text: description || "请识别这道菜" },
-              { type: "image_url", image_url: { url: dataUrl } },
-            ],
+            content: dataUrl
+              ? [
+                  { type: "text", text },
+                  { type: "image_url", image_url: { url: dataUrl } },
+                ]
+              : text,
           },
         ],
       }),
@@ -58,8 +95,34 @@ export async function parseRecipeImage(
   const content = body.choices?.[0]?.message?.content?.replace(/^```json\s*|\s*```$/g, "");
   if (!content) throw new AppError("NETWORK", "模型未返回可解析内容");
   try {
-    return JSON.parse(content) as Partial<RecipeInput>;
+    return normalizeDraft(JSON.parse(content) as Partial<RecipeInput>);
   } catch (error) {
     throw new AppError("NETWORK", "模型响应不是有效 JSON", error);
   }
+}
+
+function normalizeDraft(draft: Partial<RecipeInput>): Partial<RecipeInput> {
+  return {
+    ...draft,
+    name: typeof draft.name === "string" ? draft.name : undefined,
+    description: typeof draft.description === "string" ? draft.description : undefined,
+    ingredients: Array.isArray(draft.ingredients)
+      ? draft.ingredients
+          .filter((item) => item && typeof item.name === "string")
+          .map((item) => ({
+            id: item.id || crypto.randomUUID(),
+            name: item.name,
+            amount: typeof item.amount === "string" ? item.amount : "",
+            unit: typeof item.unit === "string" ? item.unit : "",
+            note: typeof item.note === "string" ? item.note : undefined,
+          }))
+      : undefined,
+    steps: Array.isArray(draft.steps) ? draft.steps.filter((step): step is string => typeof step === "string") : undefined,
+    meals: Array.isArray(draft.meals) ? draft.meals.filter((meal) => MEALS.has(meal)) : undefined,
+    flavors: Array.isArray(draft.flavors) ? draft.flavors.filter((flavor) => FLAVORS.has(flavor)) : undefined,
+    tags: Array.isArray(draft.tags) ? draft.tags.filter((tag): tag is string => typeof tag === "string") : undefined,
+    dietType: draft.dietType && DIET_TYPES.has(draft.dietType) ? draft.dietType : undefined,
+    duration: typeof draft.duration === "number" && Number.isFinite(draft.duration) ? draft.duration : undefined,
+    difficulty: draft.difficulty && DIFFICULTIES.has(draft.difficulty) ? draft.difficulty : undefined,
+  };
 }

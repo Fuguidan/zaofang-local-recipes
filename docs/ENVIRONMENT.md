@@ -143,6 +143,16 @@ $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
 
 说明：接受 Android SDK License 需要由使用者确认。不要把 API Key、签名密钥、用户菜谱 ZIP 或日志文件提交到 Git。
 
+模型配置可以通过项目根目录的 `.env` 预填非密钥默认值：
+
+```bash
+VITE_AI_ENDPOINT=https://example.com/v1/chat/completions
+VITE_AI_MODEL=your-vision-or-text-model
+VITE_AI_ENABLED=false
+```
+
+这些变量会在构建时进入前端程序或移动端安装包。当前实现不会从 `.env` 读取 API Key，API Key 请在应用“设置与诊断”中手动填写，只保存在当前设备的本地数据库。
+
 ## 6. MacBook 本地运行
 
 启动开发环境：
@@ -161,6 +171,13 @@ npm run typecheck
 npm run test
 npm run build
 ```
+
+AI 生成使用规则：
+
+- 设置页未打开“允许使用 AI 生成”时，不会发起任何模型请求。
+- 添加菜谱时必须先上传图片或填写菜品名称，再点击“智能生成”才会调用模型。
+- 上传 HEIC/HEIF 图片时会在本机转换为 JPEG，用于预览、保存、AI 生成和 ZIP 备份。
+- 未配置 API Key、模型接口异常、用户取消或模型返回异常时，原始图片和文字会保留，可继续手动保存。
 
 生产预览：
 
@@ -248,3 +265,4 @@ npx cap open ios
 - 换手机、重装应用、清除数据前，请先在应用的“数据管家”导出 ZIP。
 - ZIP 业务备份不包含 API Key、诊断日志和错误堆栈。
 - 诊断日志只在本机保存，不自动上传。
+- AI 日志只记录来源类别、结果、耗时和错误编号，不记录图片内容、完整提示词、完整响应或完整菜谱正文。
