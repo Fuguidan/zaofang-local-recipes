@@ -2,6 +2,15 @@ import type { AIProviderConfig, RecipeInput } from "./types";
 import { AppError } from "./errors.ts";
 import { isAiSupportedImage } from "./images.ts";
 
+export type AIFailure =
+  | "auth_failed"
+  | "rate_limited"
+  | "cors_or_network"
+  | "vision_not_supported"
+  | "bad_response_json"
+  | "bad_model_payload"
+  | "bad_recipe_json";
+
 const SYSTEM_PROMPT = `你是菜谱结构化助手。根据用户提供的菜品图片、菜品名称或补充文字生成菜谱草稿，仅返回JSON：
 {"name":"","description":"","ingredients":[{"name":"","amount":"","unit":"","note":""}],"steps":[""],"meals":["breakfast|lunch|dinner"],"flavors":["清淡|辛辣|酸甜|咸鲜|麻辣|鲜香"],"tags":[],"dietType":"荤菜|素菜|主食|汤羹","duration":30,"difficulty":"简单|适中|进阶"}。不要返回Markdown。`;
 
@@ -9,6 +18,30 @@ const MEALS = new Set(["breakfast", "lunch", "dinner"]);
 const FLAVORS = new Set(["清淡", "辛辣", "酸甜", "咸鲜", "麻辣", "鲜香"]);
 const DIET_TYPES = new Set(["荤菜", "素菜", "主食", "汤羹"]);
 const DIFFICULTIES = new Set(["简单", "适中", "进阶"]);
+const VISION_ERROR_PATTERN = /image|vision|visual|modal|multimodal|image_url|content type|图片|视觉|多模态/i;
+
+const failureSuggestions: Record<AIFailure, string> = {
+  auth_failed: "鉴权失败，请检查 API Key 是否正确，或确认接口地址属于同一家服务。",
+  rate_limited: "请求被限流或额度不足，请稍后重试，或检查模型服务额度。",
+  cors_or_network: "浏览器无法连接模型接口。Web 端常见原因是 CORS 拦截、网络不可达或接口地址错误。",
+  vision_not_supported: "接口可连接，但当前模型或服务不支持图片输入。请换支持视觉的模型，或只填写菜名生成。",
+  bad_response_json: "接口返回的内容不是 JSON，请确认接口地址是 OpenAI-compatible Chat Completions。",
+  bad_model_payload: "接口返回格式不是 OpenAI-compatible 的 choices[0].message.content。",
+  bad_recipe_json: "模型返回了内容，但不是可解析的菜谱 JSON。请换模型或调整模型输出格式。",
+};
+
+export class AIRequestError extends AppError {
+  readonly failure: AIFailure;
+  readonly status?: number;
+  readonly suggestion: string;
+
+  constructor(failure: AIFailure, detail?: string, status?: number, cause?: unknown) {
+    super("NETWORK", detail || failureSuggestions[failure], cause);
+    this.failure = failure;
+    this.status = status;
+    this.suggestion = failureSuggestions[failure];
+  }
+}
 
 function readAsDataUrl(file: Blob) {
   if (typeof FileReader === "undefined") {
@@ -32,6 +65,25 @@ export async function parseRecipeImage(
   signal?: AbortSignal,
 ): Promise<Partial<RecipeInput>> {
   return generateRecipeDraft({ image, description, config, signal });
+}
+
+export async function testAIVisionCapability(config: AIProviderConfig, signal?: AbortSignal) {
+  await generateRecipeDraft({
+    image: tinyJpegBlob(),
+    name: "图片能力测试",
+    description: "仅测试接口是否接受图片输入",
+    config,
+    signal,
+  });
+}
+
+function tinyJpegBlob() {
+  const base64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGqP//EABQQAQAAAAAAAAAAAAAAAAAAABD/2gAIAQEAAQUCf//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8BP//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8BP//Z";
+  if (typeof atob === "undefined") return new Blob([Buffer.from(base64, "base64")], { type: "image/jpeg" });
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: "image/jpeg" });
 }
 
 export async function generateRecipeDraft({
@@ -84,22 +136,44 @@ export async function generateRecipeDraft({
       signal,
     });
   } catch (error) {
-    throw new AppError("NETWORK", error instanceof Error ? error.message : "网络请求失败", error);
+    throw new AIRequestError("cors_or_network", error instanceof Error ? error.message : "网络请求失败", undefined, error);
   }
   if (!response.ok) {
-    const reason =
-      response.status === 401 ? "API Key 无效" :
-      response.status === 429 ? "请求过于频繁或额度不足" :
-      `接口返回 ${response.status}`;
-    throw new AppError("NETWORK", reason);
+    const text = await response.text().catch(() => "");
+    throw classifyHttpError(response.status, text);
   }
-  const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  let body: { choices?: Array<{ message?: { content?: string } }> };
+  try {
+    body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  } catch (error) {
+    throw new AIRequestError("bad_response_json", "接口返回的内容不是 JSON", response.status, error);
+  }
   const content = body.choices?.[0]?.message?.content?.replace(/^```json\s*|\s*```$/g, "");
-  if (!content) throw new AppError("NETWORK", "模型未返回可解析内容");
+  if (!content) throw new AIRequestError("bad_model_payload", "模型未返回 choices[0].message.content", response.status);
   try {
     return normalizeDraft(JSON.parse(content) as Partial<RecipeInput>);
   } catch (error) {
-    throw new AppError("NETWORK", "模型响应不是有效 JSON", error);
+    throw new AIRequestError("bad_recipe_json", "模型响应不是有效菜谱 JSON", response.status, error);
+  }
+}
+
+function classifyHttpError(status: number, text: string) {
+  const detail = summarizeRemoteError(text) || `接口返回 ${status}`;
+  if (status === 401 || status === 403) return new AIRequestError("auth_failed", detail, status);
+  if (status === 429) return new AIRequestError("rate_limited", detail, status);
+  if ((status === 400 || status === 422) && VISION_ERROR_PATTERN.test(text)) {
+    return new AIRequestError("vision_not_supported", detail, status);
+  }
+  return new AIRequestError("bad_model_payload", detail, status);
+}
+
+function summarizeRemoteError(text: string) {
+  if (!text) return "";
+  try {
+    const body = JSON.parse(text) as { error?: { message?: string }; message?: string };
+    return (body.error?.message || body.message || "").slice(0, 180);
+  } catch {
+    return text.slice(0, 180);
   }
 }
 

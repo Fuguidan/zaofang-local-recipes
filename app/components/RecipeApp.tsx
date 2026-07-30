@@ -19,7 +19,7 @@ import { AppError, toAppError } from "../lib/errors";
 import { logger } from "../lib/logger";
 import { recommendRecipes } from "../lib/recommendation";
 import { createBackup, parseBackup } from "../lib/backup";
-import { generateRecipeDraft } from "../lib/ai";
+import { AIRequestError, generateRecipeDraft, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
@@ -99,6 +99,14 @@ function downloadBlob(blob: Blob, filename: string) {
   anchor.download = filename;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function endpointHost(endpoint: string) {
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return "invalid-endpoint";
+  }
 }
 
 function ErrorNotice({ error, onClose }: { error?: AppError; onClose: () => void }) {
@@ -501,12 +509,13 @@ function RecipeEditor({
       if (abortRef.current?.signal.aborted) setParseNotice("已取消解析，原始图片和文字仍在。");
       else {
         onError(error);
-        setParseNotice("解析失败，原始图片和文字已保留，可直接保存。");
+        setParseNotice(caught instanceof AIRequestError ? `解析失败：${caught.suggestion}` : "解析失败，原始图片和文字已保留，可直接保存。");
       }
       await logger.warn("ai", "recipe_generate_failed", operationId, {
         stage: source,
+        result: caught instanceof AIRequestError ? caught.failure : "failed",
         errorCode: error.code,
-        message: error.message,
+        message: caught instanceof AIRequestError ? `host=${endpointHost(settings.ai.endpoint)};model=${settings.ai.model};image=${Boolean(aiImage)};status=${caught.status || "none"};failure=${caught.failure}` : error.message,
         durationMs: Math.round(performance.now() - started),
       });
     } finally {
@@ -895,16 +904,23 @@ function SettingsView({
   const [draft, setDraft] = useState(settings);
   const [filter, setFilter] = useState<"all" | "warn" | "error">("all");
   const [testing, setTesting] = useState(false);
+  const [testNotice, setTestNotice] = useState("");
   useEffect(() => setDraft(settings), [settings]);
   const visibleLogs = logs.filter((entry) => filter === "all" || entry.level === filter);
 
-  async function testConnection() {
+  function ensureAiConfig() {
     if (!draft.ai.apiKey || !draft.ai.endpoint || !draft.ai.model) {
       onError(new AppError("VALIDATION", "请先填写接口地址、模型名和 API Key"));
-      return;
+      return false;
     }
+    return true;
+  }
+
+  async function testConnection() {
+    if (!ensureAiConfig()) return;
     const operationId = crypto.randomUUID();
     setTesting(true);
+    setTestNotice("正在测试文本连接…");
     try {
       const response = await fetch(draft.ai.endpoint, {
         method: "POST",
@@ -912,11 +928,34 @@ function SettingsView({
         body: JSON.stringify({ model: draft.ai.model, max_tokens: 1, messages: [{ role: "user", content: "回复OK" }] }),
       });
       if (!response.ok) throw new AppError("NETWORK", `连接失败：${response.status}`);
-      await logger.info("ai", "connection_test_success", operationId, { result: "success" });
-      alert("连接成功。图片能力仍取决于当前模型是否支持多模态输入。");
+      await logger.info("ai", "connection_test_success", operationId, { result: "success", message: `host=${endpointHost(draft.ai.endpoint)};model=${draft.ai.model};image=false;status=${response.status}` });
+      setTestNotice("文本连接成功。图片能力请继续点击“测试图片能力”。");
     } catch (caught) {
       const error = toAppError(caught, "NETWORK"); onError(error);
-      await logger.warn("ai", "connection_test_failed", operationId, { errorCode: error.code, message: error.message });
+      setTestNotice("文本连接失败，请检查接口地址、网络和 API Key。");
+      await logger.warn("ai", "connection_test_failed", operationId, { errorCode: error.code, message: `host=${endpointHost(draft.ai.endpoint)};model=${draft.ai.model};image=false;${error.message}` });
+    } finally {
+      setTesting(false); await refreshLogs();
+    }
+  }
+
+  async function testVision() {
+    if (!ensureAiConfig()) return;
+    const operationId = crypto.randomUUID();
+    setTesting(true);
+    setTestNotice("正在测试图片能力…");
+    try {
+      await testAIVisionCapability({ ...draft.ai, enabled: true });
+      setTestNotice("图片能力测试通过。当前模型可接收图片输入。");
+      await logger.info("ai", "vision_test_success", operationId, { result: "success", message: `host=${endpointHost(draft.ai.endpoint)};model=${draft.ai.model};image=true` });
+    } catch (caught) {
+      const error = toAppError(caught, "NETWORK"); onError(error);
+      setTestNotice(caught instanceof AIRequestError ? `图片能力测试失败：${caught.suggestion}` : "图片能力测试失败，请检查模型是否支持图片输入。");
+      await logger.warn("ai", "vision_test_failed", operationId, {
+        result: caught instanceof AIRequestError ? caught.failure : "failed",
+        errorCode: error.code,
+        message: caught instanceof AIRequestError ? `host=${endpointHost(draft.ai.endpoint)};model=${draft.ai.model};image=true;status=${caught.status || "none"};failure=${caught.failure}` : error.message,
+      });
     } finally {
       setTesting(false); await refreshLogs();
     }
@@ -937,7 +976,8 @@ function SettingsView({
           <label className="field"><span>兼容接口地址</span><input value={draft.ai.endpoint} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, endpoint: event.target.value } })} /></label>
           <label className="field"><span>模型名</span><input value={draft.ai.model} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, model: event.target.value } })} placeholder="填写支持图片输入的模型" /></label>
           <label className="field"><span>API Key</span><input type="password" autoComplete="off" value={draft.ai.apiKey} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, apiKey: event.target.value } })} placeholder="仅保存在当前浏览器" /></label>
-          <div className="button-row"><button className="button-secondary" disabled={testing} onClick={() => void testConnection()}>{testing ? "正在测试…" : "测试连接"}</button><button className="button-primary" onClick={() => void onSettings(draft)}>保存设置</button></div>
+          {testNotice && <p className="inline-notice">{testNotice}</p>}
+          <div className="button-row"><button className="button-secondary" disabled={testing} onClick={() => void testConnection()}>{testing ? "正在测试…" : "测试文本连接"}</button><button className="button-secondary" disabled={testing} onClick={() => void testVision()}>测试图片能力</button><button className="button-primary" onClick={() => void onSettings(draft)}>保存设置</button></div>
         </section>
         <section className="panel settings-panel">
           <div className="panel-heading"><div><span className="eyebrow">只在本机</span><h2>调试模式</h2></div><label className="switch"><input type="checkbox" checked={draft.debugMode} onChange={(event) => { const next = { ...draft, debugMode: event.target.checked }; setDraft(next); void onSettings(next); }} /><span /></label></div>

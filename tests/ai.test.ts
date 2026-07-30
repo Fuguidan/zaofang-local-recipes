@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateRecipeDraft } from "../app/lib/ai.ts";
+import { AIRequestError, generateRecipeDraft } from "../app/lib/ai.ts";
 import { isHeicImage } from "../app/lib/images.ts";
 import type { AIProviderConfig } from "../app/lib/types.ts";
 
@@ -136,4 +136,50 @@ test("recognizes Apple HEIC and HEIF uploads", () => {
   assert.equal(isHeicImage(new File(["x"], "photo.HEIC", { type: "" })), true);
   assert.equal(isHeicImage(new File(["x"], "photo.jpg", { type: "image/heif" })), true);
   assert.equal(isHeicImage(new File(["x"], "photo.jpg", { type: "image/jpeg" })), false);
+});
+
+async function assertAiFailure(responseOrError: Response | Error, failure: AIRequestError["failure"]) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    if (responseOrError instanceof Error) throw responseOrError;
+    return responseOrError;
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => generateRecipeDraft({ name: "番茄炒蛋", config: enabledConfig }),
+      (error: unknown) => error instanceof AIRequestError && error.failure === failure && Boolean(error.suggestion),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test("classifies authentication failures", async () => {
+  await assertAiFailure(new Response(JSON.stringify({ error: { message: "invalid api key" } }), { status: 401 }), "auth_failed");
+  await assertAiFailure(new Response(JSON.stringify({ error: { message: "forbidden" } }), { status: 403 }), "auth_failed");
+});
+
+test("classifies rate limit failures", async () => {
+  await assertAiFailure(new Response(JSON.stringify({ error: { message: "too many requests" } }), { status: 429 }), "rate_limited");
+});
+
+test("classifies CORS or network failures", async () => {
+  await assertAiFailure(new TypeError("Failed to fetch"), "cors_or_network");
+});
+
+test("classifies image unsupported failures", async () => {
+  await assertAiFailure(new Response(JSON.stringify({ error: { message: "model does not support image input" } }), { status: 400 }), "vision_not_supported");
+  await assertAiFailure(new Response(JSON.stringify({ message: "content type image_url is not supported" }), { status: 422 }), "vision_not_supported");
+});
+
+test("classifies bad response JSON", async () => {
+  await assertAiFailure(new Response("not json", { status: 200 }), "bad_response_json");
+});
+
+test("classifies incompatible model payload", async () => {
+  await assertAiFailure(new Response(JSON.stringify({ result: "ok" }), { status: 200 }), "bad_model_payload");
+});
+
+test("classifies bad recipe JSON", async () => {
+  await assertAiFailure(new Response(JSON.stringify({ choices: [{ message: { content: "不是 JSON" } }] }), { status: 200 }), "bad_recipe_json");
 });
