@@ -32,6 +32,46 @@ test("converts HEIC with native browser decoding first", async () => {
   assert.equal(result.aiReady, true);
 });
 
+test("uses Android native conversion before web conversion paths", async () => {
+  const file = new File(["heic"], "dish.HEIC", { type: "image/heic" });
+  const calls: string[] = [];
+  const result = await normalizeRecipeImageFile(file, {
+    androidConvert: async () => {
+      calls.push("android");
+      return new Blob(["android-jpeg"], { type: "image/jpeg" });
+    },
+    nativeConvert: async () => {
+      calls.push("native");
+      throw new Error("native should not run");
+    },
+    heic2anyConvert: async () => {
+      calls.push("heic2any");
+      throw new Error("heic2any should not run");
+    },
+  });
+  assert.deepEqual(calls, ["android"]);
+  assert.equal(result.status, "converted");
+  assert.equal(result.file.type, "image/jpeg");
+  assert.equal(await result.file.text(), "android-jpeg");
+  assert.equal(result.aiReady, true);
+});
+
+test("falls back to web conversion when Android native conversion fails", async () => {
+  const file = new File(["heic"], "dish.HEIC", { type: "image/heic" });
+  const result = await normalizeRecipeImageFile(file, {
+    androidConvert: async () => {
+      throw new Error("android_decode_failed");
+    },
+    nativeConvert: async () => new Blob(["web-jpeg"], { type: "image/jpeg" }),
+    heic2anyConvert: async () => {
+      throw new Error("heic2any should not run");
+    },
+  });
+  assert.equal(result.status, "converted");
+  assert.equal(await result.file.text(), "web-jpeg");
+  assert.match(result.failureSummary || "", /android_decode_failed/);
+});
+
 test("falls back to heic2any when native HEIC decoding fails", async () => {
   const file = new File(["heic"], "dish.heif", { type: "image/heif" });
   const result = await normalizeRecipeImageFile(file, {

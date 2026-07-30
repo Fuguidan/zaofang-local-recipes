@@ -1,3 +1,5 @@
+import { convertHeicWithAndroid } from "./native-image.ts";
+
 const HEIC_TYPES = new Set(["image/heic", "image/heif"]);
 const HEIC_EXTENSIONS = /\.(heic|heif)$/i;
 const AI_READY_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -8,6 +10,7 @@ export type NormalizedRecipeImage =
   | { status: "unsupported"; file: File; aiReady: false; failureSummary: string };
 
 export interface ImageNormalizeDependencies {
+  androidConvert?: (file: File) => Promise<Blob>;
   nativeConvert?: (file: File) => Promise<Blob>;
   heic2anyConvert?: (file: File) => Promise<Blob | Blob[]>;
 }
@@ -87,8 +90,14 @@ export async function normalizeRecipeImageFile(
   const source = heicTypedFile(file);
   const failures: string[] = [];
   try {
-    const jpeg = await (dependencies.nativeConvert || nativeConvert)(source);
+    const jpeg = await (dependencies.androidConvert || convertHeicWithAndroid)(source);
     return { status: "converted", file: toJpegFile(jpeg, source), aiReady: true };
+  } catch (error) {
+    failures.push(`android:${errorSummary(error)}`);
+  }
+  try {
+    const jpeg = await (dependencies.nativeConvert || nativeConvert)(source);
+    return { status: "converted", file: toJpegFile(jpeg, source), aiReady: true, failureSummary: failures.join(";") || undefined };
   } catch (error) {
     failures.push(`native:${errorSummary(error)}`);
   }

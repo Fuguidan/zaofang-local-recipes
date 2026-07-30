@@ -13,6 +13,7 @@
 - `docs(environment): 补充本机运行与移动端打包说明`：记录 Node、JDK、Android SDK、Xcode、运行和打包命令。
 - `feat(ai): 支持菜名生成与HEIC图片处理`：增加手动触发 AI 生成、HEIC 转 JPEG 和非密钥环境默认配置。
 - `fix(image): 增强HEIC转换兜底与诊断`：按 TDD 增加原生转换、heic2any fallback、失败保留原图和 AI 发送边界。
+- `fix(android): 使用原生解码修复HEIC预览与AI生成`：增加 Android Capacitor 原生插件，优先将 HEIC 转为 JPEG。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -121,3 +122,12 @@
 - 测试：先补红灯测试，再实现到绿灯；覆盖普通图片、HEIC 原生转换、fallback、失败保留、AI 边界和 HEIC 备份往返。
 - 已知问题：不同 iPhone HEIC 编码仍可能无法被 Web 转换，但不会再阻断保存。
 - 下一步：用 `caipin_photo/` 中真实 HEIC 样本做手机或浏览器手工验收。
+
+## 2026-07-30 · Android 原生 HEIC 转换
+
+- 目标：解决 Android APK 中 HEIC 上传不能预览、不能作为图片发送给 AI 的问题。
+- 修改：新增 `NativeImageConverter` Capacitor 插件，Android 端使用 `ImageDecoder`/`BitmapFactory` 解码 HEIC/HEIF 并压缩为 JPEG；前端 HEIC 处理链路优先调用 Android 原生转换，再回退到 Web 转换。
+- 决策：Android 原生转换成功后保存 JPEG，不保留原始 HEIC；转换失败才保留原始 HEIC 并禁用该图片的 AI 图像发送。
+- 测试：新增 Android 原生优先和失败回退测试；类型检查、领域测试、生产构建和 Android APK 构建通过。
+- 已知问题：纯 Web 环境仍受浏览器 HEIC 解码能力限制；Android 真机仍需用 `caipin_photo/` 中的样本完成安装后验收。
+- 下一步：在 Android 真机安装最新 APK，验证 HEIC 预览、智能生成、保存、刷新和 ZIP 往返。
