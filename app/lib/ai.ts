@@ -19,6 +19,7 @@ const FLAVORS = new Set(["清淡", "辛辣", "酸甜", "咸鲜", "麻辣", "鲜�
 const DIET_TYPES = new Set(["荤菜", "素菜", "主食", "汤羹"]);
 const DIFFICULTIES = new Set(["简单", "适中", "进阶"]);
 const VISION_ERROR_PATTERN = /image|vision|visual|modal|multimodal|image_url|content type|图片|视觉|多模态/i;
+export const LOCAL_AI_PROXY_PATH = "/__local_ai_proxy/chat/completions";
 
 const failureSuggestions: Record<AIFailure, string> = {
   auth_failed: "鉴权失败，请检查 API Key 是否正确，或确认接口地址属于同一家服务。",
@@ -41,6 +42,38 @@ export class AIRequestError extends AppError {
     this.status = status;
     this.suggestion = failureSuggestions[failure];
   }
+}
+
+export function resolveAIRequestTarget(
+  endpoint: string,
+  environment?: { pageUrl?: string; isNativeApp?: boolean },
+) {
+  const pageUrl = environment?.pageUrl || (typeof window === "undefined" ? undefined : window.location.href);
+  const isNativeApp = environment?.isNativeApp ?? isCapacitorNativeApp();
+  if (!pageUrl || isNativeApp) return endpoint;
+  let page: URL;
+  let target: URL;
+  try {
+    page = new URL(pageUrl);
+    target = new URL(endpoint);
+  } catch {
+    return endpoint;
+  }
+  if (!["http:", "https:"].includes(page.protocol) || !isLocalHostname(page.hostname)) return endpoint;
+  if (page.origin === target.origin) return endpoint;
+  return `${LOCAL_AI_PROXY_PATH}?target=${encodeURIComponent(endpoint)}`;
+}
+
+function isLocalHostname(hostname: string) {
+  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname);
+}
+
+function isCapacitorNativeApp() {
+  if (typeof window === "undefined") return false;
+  const maybeCapacitor = (window as typeof window & {
+    Capacitor?: { isNativePlatform?: () => boolean };
+  }).Capacitor;
+  return Boolean(maybeCapacitor?.isNativePlatform?.());
 }
 
 function readAsDataUrl(file: Blob) {
@@ -114,7 +147,7 @@ export async function generateRecipeDraft({
   ].filter(Boolean).join("\n");
   let response: Response;
   try {
-    response = await fetch(config.endpoint, {
+    response = await fetch(resolveAIRequestTarget(config.endpoint), {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
       body: JSON.stringify({
@@ -161,6 +194,7 @@ function classifyHttpError(status: number, text: string) {
   const detail = summarizeRemoteError(text) || `接口返回 ${status}`;
   if (status === 401 || status === 403) return new AIRequestError("auth_failed", detail, status);
   if (status === 429) return new AIRequestError("rate_limited", detail, status);
+  if (status === 502 || status === 503 || status === 504) return new AIRequestError("cors_or_network", detail, status);
   if ((status === 400 || status === 422) && VISION_ERROR_PATTERN.test(text)) {
     return new AIRequestError("vision_not_supported", detail, status);
   }

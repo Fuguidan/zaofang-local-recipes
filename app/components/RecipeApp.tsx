@@ -19,7 +19,7 @@ import { AppError, toAppError } from "../lib/errors";
 import { logger } from "../lib/logger";
 import { recommendRecipes } from "../lib/recommendation";
 import { createBackup, parseBackup } from "../lib/backup";
-import { AIRequestError, generateRecipeDraft, testAIVisionCapability } from "../lib/ai";
+import { AIRequestError, generateRecipeDraft, resolveAIRequestTarget, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
@@ -922,7 +922,7 @@ function SettingsView({
     setTesting(true);
     setTestNotice("正在测试文本连接…");
     try {
-      const response = await fetch(draft.ai.endpoint, {
+      const response = await fetch(resolveAIRequestTarget(draft.ai.endpoint), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${draft.ai.apiKey}` },
         body: JSON.stringify({ model: draft.ai.model, max_tokens: 1, messages: [{ role: "user", content: "回复OK" }] }),

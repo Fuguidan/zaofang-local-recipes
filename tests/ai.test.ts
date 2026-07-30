@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AIRequestError, generateRecipeDraft } from "../app/lib/ai.ts";
+import { AIRequestError, generateRecipeDraft, LOCAL_AI_PROXY_PATH, resolveAIRequestTarget } from "../app/lib/ai.ts";
 import { isHeicImage } from "../app/lib/images.ts";
 import type { AIProviderConfig } from "../app/lib/types.ts";
 
@@ -65,6 +65,44 @@ test("generates recipe draft from dish name only", async () => {
     assert.equal(typeof body.messages[1].content, "string");
     assert.match(String(body.messages[1].content), /菜品名称：番茄炒蛋/);
   } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routes localhost web AI requests through the local dev proxy", async () => {
+  const target = resolveAIRequestTarget("https://api.example.test/v1/chat/completions", {
+    pageUrl: "http://localhost:5173/recipes",
+    isNativeApp: false,
+  });
+  assert.match(target, new RegExp(`^${LOCAL_AI_PROXY_PATH}\\?target=`));
+  assert.equal(new URL(target, "http://localhost:5173").searchParams.get("target"), "https://api.example.test/v1/chat/completions");
+});
+
+test("does not use the local dev proxy outside localhost web development", () => {
+  const endpoint = "https://api.example.test/v1/chat/completions";
+  assert.equal(resolveAIRequestTarget(endpoint, { pageUrl: "http://localhost:5173/app", isNativeApp: true }), endpoint);
+  assert.equal(resolveAIRequestTarget(endpoint, { pageUrl: "https://recipes.example.test/app", isNativeApp: false }), endpoint);
+  assert.equal(resolveAIRequestTarget("http://localhost:5173/api/ai", { pageUrl: "http://localhost:5173/app", isNativeApp: false }), "http://localhost:5173/api/ai");
+});
+
+test("generateRecipeDraft uses the local proxy target when running on localhost web", async () => {
+  const inputs: string[] = [];
+  const originalFetch = globalThis.fetch;
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  globalThis.fetch = (async (input) => {
+    inputs.push(String(input));
+    return new Response(JSON.stringify(aiResponse), { status: 200 });
+  }) as typeof fetch;
+  try {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { location: { href: "http://localhost:5173/" } },
+    });
+    await generateRecipeDraft({ name: "番茄炒蛋", config: enabledConfig });
+    assert.match(inputs[0], new RegExp(`^${LOCAL_AI_PROXY_PATH}\\?target=`));
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
     globalThis.fetch = originalFetch;
   }
 });
@@ -165,6 +203,7 @@ test("classifies rate limit failures", async () => {
 
 test("classifies CORS or network failures", async () => {
   await assertAiFailure(new TypeError("Failed to fetch"), "cors_or_network");
+  await assertAiFailure(new Response(JSON.stringify({ error: { message: "local AI proxy failed to reach target endpoint" } }), { status: 502 }), "cors_or_network");
 });
 
 test("classifies image unsupported failures", async () => {
