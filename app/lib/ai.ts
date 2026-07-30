@@ -1,5 +1,6 @@
 import type { AIProviderConfig, RecipeInput } from "./types";
 import { AppError } from "./errors.ts";
+import { isAiSupportedImage } from "./images.ts";
 
 const SYSTEM_PROMPT = `你是菜谱结构化助手。根据用户提供的菜品图片、菜品名称或补充文字生成菜谱草稿，仅返回JSON：
 {"name":"","description":"","ingredients":[{"name":"","amount":"","unit":"","note":""}],"steps":[""],"meals":["breakfast|lunch|dinner"],"flavors":["清淡|辛辣|酸甜|咸鲜|麻辣|鲜香"],"tags":[],"dietType":"荤菜|素菜|主食|汤羹","duration":30,"difficulty":"简单|适中|进阶"}。不要返回Markdown。`;
@@ -49,14 +50,15 @@ export async function generateRecipeDraft({
   if (!config.enabled || !config.apiKey || !config.endpoint || !config.model) {
     throw new AppError("NETWORK", "未配置或未启用 AI 生成");
   }
-  if (!image && !name?.trim()) {
-    throw new AppError("VALIDATION", "请先上传图片或填写菜名");
+  const aiImage = isAiSupportedImage(image) ? image : undefined;
+  if (!aiImage && !name?.trim()) {
+    throw new AppError("VALIDATION", "请先上传可用于 AI 的图片或填写菜名");
   }
-  const dataUrl = image ? await readAsDataUrl(image) : undefined;
+  const dataUrl = aiImage ? await readAsDataUrl(aiImage) : undefined;
   const text = [
     name?.trim() ? `菜品名称：${name.trim()}` : "",
     description?.trim() ? `补充说明：${description.trim()}` : "",
-    image ? "请结合图片生成菜谱草稿。" : "请根据菜品名称生成菜谱草稿。",
+    aiImage ? "请结合图片生成菜谱草稿。" : "请根据菜品名称生成菜谱草稿。",
   ].filter(Boolean).join("\n");
   let response: Response;
   try {

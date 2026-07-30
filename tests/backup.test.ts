@@ -42,3 +42,17 @@ test("rejects damaged zip files", async () => {
   const file = new File(["not-a-zip"], "broken.zip", { type: "application/zip" });
   await assert.rejects(() => parseBackup(file), /备份文件无法处理|invalid|Unknown compression method/i);
 });
+
+test("exports and imports original HEIC images", async () => {
+  const heicRecipe: Recipe = {
+    ...sample,
+    id: "recipe-heic",
+    image: new File(["heic-bytes"], "测试.HEIC", { type: "image/heic" }),
+    imageName: "测试.HEIC",
+  };
+  const blob = await createBackup([heicRecipe], settings, []);
+  const parsed = await parseBackup(new File([blob], "backup.zip", { type: "application/zip" }));
+  assert.equal(parsed.manifest.imageFiles[0], "images/recipe-heic.heic");
+  assert.equal(parsed.recipes[0].image?.type, "image/heic");
+  assert.equal(await parsed.recipes[0].image?.text(), "heic-bytes");
+});

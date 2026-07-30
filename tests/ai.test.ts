@@ -93,6 +93,45 @@ test("generates recipe draft from image and text", async () => {
   }
 });
 
+test("does not send unsupported HEIC image to AI and falls back to dish name", async () => {
+  const bodies: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify(aiResponse), { status: 200 });
+  }) as typeof fetch;
+  try {
+    await generateRecipeDraft({
+      image: new Blob(["heic-bytes"], { type: "image/heic" }),
+      name: "番茄炒蛋",
+      config: enabledConfig,
+    });
+    const body = bodies[0] as { messages: Array<{ content: unknown }> };
+    assert.equal(typeof body.messages[1].content, "string");
+    assert.doesNotMatch(String(body.messages[1].content), /image_url/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects unsupported HEIC image without a dish name before calling AI", async () => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify(aiResponse), { status: 200 });
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => generateRecipeDraft({ image: new Blob(["heic-bytes"], { type: "image/heic" }), config: enabledConfig }),
+      /请先上传可用于 AI 的图片或填写菜名/,
+    );
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("recognizes Apple HEIC and HEIF uploads", () => {
   assert.equal(isHeicImage(new File(["x"], "photo.HEIC", { type: "" })), true);
   assert.equal(isHeicImage(new File(["x"], "photo.jpg", { type: "image/heif" })), true);

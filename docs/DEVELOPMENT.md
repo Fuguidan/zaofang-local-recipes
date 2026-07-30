@@ -12,6 +12,7 @@
 - `build(android): 生成并校验调试APK`：完成 Android 36 构建、签名和内置资源检查。
 - `docs(environment): 补充本机运行与移动端打包说明`：记录 Node、JDK、Android SDK、Xcode、运行和打包命令。
 - `feat(ai): 支持菜名生成与HEIC图片处理`：增加手动触发 AI 生成、HEIC 转 JPEG 和非密钥环境默认配置。
+- `fix(image): 增强HEIC转换兜底与诊断`：按 TDD 增加原生转换、heic2any fallback、失败保留原图和 AI 发送边界。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -111,3 +112,12 @@
 - 测试：新增 AI 触发边界、菜名生成、图文生成和 HEIC/HEIF 识别测试；全部领域测试通过。
 - 已知问题：真实 HEIC 解码依赖浏览器运行环境和 `heic2any`，需要在 iPhone 或含 HEIC 样本的浏览器流程中验收。
 - 下一步：用真机照片验证 HEIC 上传、转换、智能生成、保存、ZIP 导出导入和 Android APK 打包。
+
+## 2026-07-30 · HEIC 转换兜底修复
+
+- 目标：修复 HEIC 转换失败会阻断菜谱录入的问题，失败时仍可保存原始 HEIC。
+- 修改：图片处理返回 `passthrough`、`converted`、`unsupported` 状态；HEIC 先尝试浏览器原生解码加 Canvas，再 fallback 到 `heic2any`；两者失败时保留原图并禁用该图片的 AI 图像发送。
+- 决策：未转换成功的 HEIC 不发送给模型；有菜名时允许文本生成；ZIP 继续保留原始 HEIC/HEIF 文件。
+- 测试：先补红灯测试，再实现到绿灯；覆盖普通图片、HEIC 原生转换、fallback、失败保留、AI 边界和 HEIC 备份往返。
+- 已知问题：不同 iPhone HEIC 编码仍可能无法被 Web 转换，但不会再阻断保存。
+- 下一步：用 `caipin_photo/` 中真实 HEIC 样本做手机或浏览器手工验收。

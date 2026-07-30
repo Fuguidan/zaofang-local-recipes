@@ -20,7 +20,7 @@ import { logger } from "../lib/logger";
 import { recommendRecipes } from "../lib/recommendation";
 import { createBackup, parseBackup } from "../lib/backup";
 import { generateRecipeDraft } from "../lib/ai";
-import { isHeicImage, normalizeRecipeImageFile } from "../lib/images";
+import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
 type EditorMode = "create" | "edit";
@@ -460,9 +460,10 @@ function RecipeEditor({
 
   async function generateDraft() {
     const hasName = Boolean(value.name.trim());
-    const source = value.image ? "image" : "name";
-    if (!value.image && !hasName) {
-      setParseNotice("请先上传图片或填写菜名，再点击智能生成。");
+    const aiImage = isAiSupportedImage(value.image) ? value.image : undefined;
+    const source = aiImage ? "image" : "name";
+    if (!aiImage && !hasName) {
+      setParseNotice(value.image ? "该图片暂不能用于图片 AI，请填写菜名或换成 JPG/PNG/WebP。" : "请先上传图片或填写菜名，再点击智能生成。");
       return;
     }
     if (!settings.ai.enabled) {
@@ -477,10 +478,10 @@ function RecipeEditor({
     const started = performance.now();
     abortRef.current = new AbortController();
     setParsing(true);
-    setParseNotice(value.image ? "仅发送当前图片和本次文字，正在等待模型返回…" : "仅发送本次菜名和补充文字，正在等待模型返回…");
+    setParseNotice(aiImage ? "仅发送当前图片和本次文字，正在等待模型返回…" : "仅发送本次菜名和补充文字，正在等待模型返回…");
     try {
       const parsed = await generateRecipeDraft({
-        image: value.image,
+        image: aiImage,
         name: value.name,
         description: value.description,
         config: settings.ai,
@@ -532,8 +533,15 @@ function RecipeEditor({
                   try {
                     setParseNotice(isHeicImage(file) ? "正在将 HEIC 图片转换为 JPEG…" : "");
                     const normalized = await normalizeRecipeImageFile(file);
-                    onChange({ ...value, image: normalized, imageName: normalized.name });
-                    if (isHeicImage(file)) setParseNotice("HEIC 图片已在本机转换为 JPEG，可继续保存或智能生成。");
+                    onChange({ ...value, image: normalized.file, imageName: normalized.file.name });
+                    if (normalized.status === "converted") setParseNotice("HEIC 图片已在本机转换为 JPEG，可继续保存或智能生成。");
+                    else if (normalized.status === "unsupported") {
+                      setParseNotice("已保留原始 HEIC，可保存；该图片暂不能用于图片 AI，请填写菜名生成或换成 JPG/PNG/WebP。");
+                      await logger.warn("image", "heic_conversion_unsupported", undefined, {
+                        result: "unsupported",
+                        message: normalized.failureSummary,
+                      });
+                    }
                   } catch (caught) {
                     const error = toAppError(caught, "IMAGE");
                     onError(error);
