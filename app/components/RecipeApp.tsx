@@ -514,13 +514,15 @@ function RecipeEditor({
       if (abortRef.current?.signal.aborted) setParseNotice("已取消解析，原始图片和文字仍在。");
       else {
         onError(error);
-        setParseNotice(caught instanceof AIRequestError ? `解析失败：${caught.suggestion}` : "解析失败，原始图片和文字已保留，可直接保存。");
+        setParseNotice(caught instanceof AIRequestError
+          ? `解析失败：${caught.suggestion}${isNativeAppRuntime() ? `（设备网络：${sanitizeNetworkDetail(caught.message)}）` : ""}`
+          : "解析失败，原始图片和文字已保留，可直接保存。");
       }
       await logger.warn("ai", "recipe_generate_failed", operationId, {
         stage: source,
         result: caught instanceof AIRequestError ? caught.failure : "failed",
         errorCode: error.code,
-        message: caught instanceof AIRequestError ? `host=${endpointHost(settings.ai.endpoint)};model=${settings.ai.model};image=${Boolean(aiImage)};status=${caught.status || "none"};failure=${caught.failure}` : error.message,
+        message: caught instanceof AIRequestError ? `host=${endpointHost(settings.ai.endpoint)};model=${settings.ai.model};image=${Boolean(aiImage)};status=${caught.status || "none"};failure=${caught.failure};detail=${sanitizeNetworkDetail(caught.message)}` : error.message,
         durationMs: Math.round(performance.now() - started),
       });
     } finally {
@@ -634,6 +636,14 @@ function RecipeEditor({
       </section>
     </div>
   );
+}
+
+function isNativeAppRuntime() {
+  return Boolean((globalThis as typeof globalThis & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
+}
+
+function sanitizeNetworkDetail(value: string) {
+  return value.replace(/Bearer\s+\S+/gi, "Bearer <redacted>").replace(/https?:\/\/[^\s)]+/gi, "<endpoint>").slice(0, 120);
 }
 
 function ImagePreview({ blob }: { blob: Blob }) {

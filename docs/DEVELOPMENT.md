@@ -199,3 +199,12 @@
 - 测试：新增原生环境请求路径测试；类型检查、37 项领域测试、Android Web 构建、Capacitor 同步和 Gradle `assembleDebug` 均通过。
 - 产物：重新生成 `artifacts/zaofang-android-debug.apk`，需要卸载旧包或覆盖安装后验证。
 - 已知问题：若仍提示失败，可能是模型服务鉴权、接口地址、模型不支持图片或设备网络本身的问题，此时错误编号可用于继续定位；需要真实设备 logcat 才能进一步区分 TLS/DNS 等底层网络错误。
+
+## 2026-08-02 · Android 状态栏安全区与原生请求增强
+
+- 目标：处理 Android 手机状态栏覆盖顶部导航的问题，并继续降低原生模型请求失败概率。
+- 修改：启用 CapacitorHttp 原生网络配置；请求体显式序列化为 JSON 字符串，避免 Android Bridge 对嵌套 `image_url` 数组的对象封送差异；原生失败提示和诊断日志增加脱敏后的设备网络错误摘要。
+- 布局：Android 主窗口设置状态栏/导航栏颜色和系统栏对比度；移动端顶部导航、抽屉头部、底部操作栏和错误提示使用 `safe-area-inset-*`，抽屉改用 `100dvh`，避免内容跑到状态栏或导航手势区域。
+- 测试：类型检查、37 项领域测试、Android Web 构建、Capacitor 同步和 Gradle `assembleDebug` 全部通过。
+- 产物：重新生成 `artifacts/zaofang-android-debug.apk`。
+- 已知问题：当前开发机未连接 Android 真机，无法读取该设备的 DNS/TLS 原生日志；若新 APK 仍请求失败，请把新的“设备网络”摘要和错误日志一并提供。

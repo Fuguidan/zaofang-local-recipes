@@ -166,7 +166,9 @@ export async function generateRecipeDraft({
         url: config.endpoint,
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-        data: requestBody,
+        // Send a JSON string explicitly. This avoids Android bridge differences
+        // when nested image_url arrays are marshalled from JavaScript objects.
+        data: JSON.stringify(requestBody),
         responseType: "json",
         connectTimeout: 30_000,
         readTimeout: 120_000,
