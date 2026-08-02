@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createBackup, parseBackup } from "../app/lib/backup.ts";
+import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid } from "../app/lib/native-backup.ts";
 import type { AppSettings, Recipe } from "../app/lib/types.ts";
 
 const settings: AppSettings = {
@@ -55,4 +56,34 @@ test("exports and imports original HEIC images", async () => {
   assert.equal(parsed.manifest.imageFiles[0], "images/recipe-heic.heic");
   assert.equal(parsed.recipes[0].image?.type, "image/heic");
   assert.equal(await parsed.recipes[0].image?.text(), "heic-bytes");
+});
+
+test("detects Android native backup availability by platform", () => {
+  assert.equal(isAndroidNativeBackupAvailable("android"), true);
+  assert.equal(isAndroidNativeBackupAvailable("web"), false);
+  assert.equal(isAndroidNativeBackupAvailable("ios"), false);
+});
+
+test("passes backup zip bytes to Android native document saver", async () => {
+  const calls: Array<{ data: string; filename: string; mimeType: string }> = [];
+  const result = await saveBackupWithAndroid(new Blob(["zip-bytes"], { type: "application/zip" }), "备份.zip", {
+    saveZip: async (options) => {
+      calls.push(options);
+      return { uri: "content://backup/1", filename: options.filename, mimeType: options.mimeType, displayPath: "content://backup/1" };
+    },
+  });
+  assert.equal(calls[0].filename, "备份.zip");
+  assert.equal(calls[0].mimeType, "application/zip");
+  assert.equal(Buffer.from(calls[0].data, "base64").toString("utf8"), "zip-bytes");
+  assert.equal(result.uri, "content://backup/1");
+});
+
+test("opens Android saved backup through native plugin", async () => {
+  const calls: Array<{ uri: string; mimeType: string }> = [];
+  await openAndroidSavedBackup("content://backup/1", {
+    openSavedFile: async (options) => {
+      calls.push(options);
+    },
+  });
+  assert.deepEqual(calls[0], { uri: "content://backup/1", mimeType: "application/zip" });
 });

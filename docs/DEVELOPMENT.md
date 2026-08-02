@@ -17,6 +17,7 @@
 - `fix(ai): 增强图片解析错误分类与诊断`：细分 AI 请求失败类型，增加图片能力测试和用户可执行建议。
 - `fix(ai): 增加本机开发代理修复Web端CORS`：localhost Web 测试自动走 Vite 本机代理转发模型请求。
 - `fix(ai): 兼容常见模型文本响应格式`：支持 Chat Completions 和 Responses 常见文本输出位置。
+- `fix(android): 使用系统文件选择器导出ZIP`：Android APK 导出备份时弹出保存位置选择器并支持打开结果文件。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -161,3 +162,12 @@
 - 测试：新增 Chat Completions 变体和 Responses API 变体单元测试；领域测试通过。
 - 已知问题：如果模型服务返回完全自定义字段，需要根据该服务实际响应再扩展映射。
 - 下一步：用真实接口重新执行“测试文本连接”“测试图片能力”和菜谱智能生成。
+
+## 2026-08-02 · Android ZIP 导出文件选择器
+
+- 目标：修复 Android APK 点击导出 ZIP 没有响应的问题。
+- 修改：新增 `NativeBackupFile` Capacitor 插件，使用 Android `ACTION_CREATE_DOCUMENT` 调起系统文件选择器并写入 ZIP；前端导出时先显示默认文件名弹框，允许用户改名，再选择保存位置；保存成功后显示文件名、系统 URI，并提供打开导出文件入口。
+- 决策：Web/PWA 继续使用浏览器下载；Android APK 使用系统文档选择器，避免 WebView 对 `<a download>` 支持不稳定。用户取消保存视为正常取消，不弹错误。
+- 测试：新增 Android 原生备份可用性、ZIP base64 传递和打开已保存文件的单元测试；类型检查和领域测试通过。
+- 已知问题：Android 系统不会向应用暴露普通文件路径，只返回 `content://` URI；具体展示位置由用户在系统文件选择器中决定。
+- 下一步：在 Android 真机安装最新 APK，验证导出弹框、选择目录、保存 ZIP、打开文件和重新导入。

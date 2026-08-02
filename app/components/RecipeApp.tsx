@@ -21,6 +21,7 @@ import { recommendRecipes } from "../lib/recommendation";
 import { createBackup, parseBackup } from "../lib/backup";
 import { AIRequestError, generateRecipeDraft, resolveAIRequestTarget, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
+import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
 type EditorMode = "create" | "edit";
@@ -107,6 +108,10 @@ function endpointHost(endpoint: string) {
   } catch {
     return "invalid-endpoint";
   }
+}
+
+function defaultBackupFilename() {
+  return `灶房菜谱备份-${new Date().toISOString().slice(0, 10)}.zip`;
 }
 
 function ErrorNotice({ error, onClose }: { error?: AppError; onClose: () => void }) {
@@ -790,23 +795,52 @@ function BackupView({
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof parseBackup>>>();
   const [confirmClear, setConfirmClear] = useState(false);
   const [conflictStrategy, setConflictStrategy] = useState<"overwrite" | "keep" | "copy">("overwrite");
+  const [exportDialog, setExportDialog] = useState<{ filename: string }>();
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<NativeBackupSaveResult | { filename: string; displayPath: string }>();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function exportData() {
+  async function exportData(filename = defaultBackupFilename()) {
     const operationId = crypto.randomUUID();
     const started = performance.now();
+    const safeFilename = filename.trim().toLowerCase().endsWith(".zip") ? filename.trim() : `${filename.trim() || defaultBackupFilename()}.zip`;
+    setExporting(true);
     try {
       const blob = await createBackup(recipes, settings, history);
-      downloadBlob(blob, `灶房菜谱备份-${new Date().toISOString().slice(0, 10)}.zip`);
+      const nativeExport = isAndroidNativeBackupAvailable();
+      if (nativeExport) {
+        const result = await saveBackupWithAndroid(blob, safeFilename);
+        setExportResult(result);
+      } else {
+        downloadBlob(blob, safeFilename);
+        setExportResult({ filename: safeFilename, displayPath: "浏览器下载目录" });
+      }
+      setExportDialog(undefined);
       await logger.info("backup", "export_success", operationId, {
         result: "success",
+        stage: nativeExport ? "android_document_picker" : "browser_download",
         durationMs: Math.round(performance.now() - started),
         message: `records=${recipes.length};bytes=${blob.size}`,
       });
       await refreshLogs();
     } catch (caught) {
+      if (String(caught instanceof Error ? caught.message : caught).includes("export_cancelled")) {
+        setExportDialog(undefined);
+        return;
+      }
       const error = toAppError(caught, "BACKUP"); onError(error);
       await logger.error("backup", "export_failed", operationId, { errorCode: error.code, message: error.message });
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function openExportResult() {
+    if (!exportResult || !("uri" in exportResult)) return;
+    try {
+      await openAndroidSavedBackup(exportResult.uri);
+    } catch (caught) {
+      onError(toAppError(caught, "BACKUP"));
     }
   }
 
@@ -864,7 +898,7 @@ function BackupView({
     <section className="page-section">
       <div className="page-heading"><div><span className="eyebrow">可迁移 · 可恢复 · 不上云</span><h1>把数据掌握在自己手里</h1><p>用完整 ZIP 备份迁移菜谱和图片，API Key 与诊断日志不会被打包。</p></div></div>
       <div className="backup-grid">
-        <article className="backup-card export-card"><span className="backup-icon">出</span><div><span className="eyebrow">完整备份</span><h2>导出本地数据</h2><p>包含 {recipes.length} 道菜谱、图片、标签和推荐历史。</p><ul><li>版本化 JSON 数据</li><li>原始菜品图片</li><li>不包含 API Key</li></ul><button className="button-primary" onClick={() => void exportData()}>导出 ZIP 备份</button></div></article>
+        <article className="backup-card export-card"><span className="backup-icon">出</span><div><span className="eyebrow">完整备份</span><h2>导出本地数据</h2><p>包含 {recipes.length} 道菜谱、图片、标签和推荐历史。</p><ul><li>版本化 JSON 数据</li><li>原始菜品图片</li><li>不包含 API Key</li></ul><button className="button-primary" onClick={() => setExportDialog({ filename: defaultBackupFilename() })}>导出 ZIP 备份</button>{exportResult && <p className="inline-notice">已导出：{exportResult.filename}<br /><small>{exportResult.displayPath}</small>{"uri" in exportResult && <><br /><button className="text-button" onClick={() => void openExportResult()}>打开导出的文件</button></>}</p>}</div></article>
         <article className="backup-card import-card"><span className="backup-icon">入</span><div><span className="eyebrow">安全恢复</span><h2>导入备份文件</h2><p>先验证并预览，再决定是否写入本机。</p><input ref={fileRef} hidden type="file" accept=".zip,application/zip" onChange={(event) => void inspectFile(event.target.files?.[0])} /><button className="button-secondary" onClick={() => fileRef.current?.click()}>选择 ZIP 文件</button></div></article>
       </div>
       <div className="data-summary panel">
@@ -880,6 +914,16 @@ function BackupView({
             <p>备份创建于 {new Date(preview.manifest.createdAt).toLocaleString("zh-CN")}，包含 {preview.manifest.imageFiles.length} 张图片。请选择相同 ID 的处理方式。</p>
             <label className="field"><span>冲突处理</span><select value={conflictStrategy} onChange={(event) => setConflictStrategy(event.target.value as typeof conflictStrategy)}><option value="overwrite">使用备份版本</option><option value="keep">保留本地版本</option><option value="copy">另存为副本</option></select></label>
             <div className="button-row"><button className="button-ghost" onClick={() => setPreview(undefined)}>取消</button><button className="button-primary" onClick={() => void importData()}>确认导入</button></div>
+          </section>
+        </div>
+      )}
+      {exportDialog && (
+        <div className="modal-backdrop">
+          <section className="confirm-card import-preview" role="dialog" aria-modal="true">
+            <span className="eyebrow">选择导出位置</span><h2>保存 ZIP 备份</h2>
+            <p>{isAndroidNativeBackupAvailable() ? "下一步会打开安卓系统文件选择器。你可以使用默认文件名，也可以改名，然后选择保存目录。" : "浏览器会保存到默认下载目录，你可以先修改文件名。"}</p>
+            <label className="field"><span>默认文件名</span><input value={exportDialog.filename} onChange={(event) => setExportDialog({ filename: event.target.value })} /></label>
+            <div className="button-row"><button className="button-ghost" disabled={exporting} onClick={() => setExportDialog(undefined)}>取消</button><button className="button-primary" disabled={exporting} onClick={() => void exportData(exportDialog.filename)}>{exporting ? "正在导出…" : isAndroidNativeBackupAvailable() ? "选择位置并导出" : "导出"}</button></div>
           </section>
         </div>
       )}

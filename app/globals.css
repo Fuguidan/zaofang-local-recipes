@@ -79,6 +79,8 @@ p { color: var(--muted); line-height: 1.75; }
 .button-ghost:hover { background: #eee7dc; color: var(--ink); }
 .button-danger { background: var(--danger); color: white; }
 .danger-link { color: var(--danger) !important; border: 0 !important; background: none !important; }
+.text-button { border: 0; background: transparent; color: var(--accent); padding: 8px 0 0; font-weight: 800; cursor: pointer; }
+.text-button:hover { text-decoration: underline; }
 .button-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .icon-button { border: 0; background: transparent; color: var(--muted); min-width: 34px; min-height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; }
 .icon-button:hover { background: #eee7dc; color: var(--ink); }
