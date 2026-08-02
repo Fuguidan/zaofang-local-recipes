@@ -181,3 +181,12 @@
 - 测试：TypeScript 类型检查、领域单元测试、Web 生产构建、Android 静态资源同步和 Gradle `assembleDebug` 均通过。
 - 已知问题：没有连接真机 logcat，本次根据 0B 占位文件现象和 Activity 回调机制修复；仍需用用户出问题的 Android 手机安装最新 APK 验证。
 - 下一步：真机验证导出 ZIP 文件大小不为 0B，并能通过“打开导出的文件”和“导入备份文件”读取。
+
+## 2026-08-02 · Web 端 AI 同源代理修复
+
+- 目标：修复 Web 端图片解析直连第三方模型接口时的 CORS 拦截，并验证图文请求链路。
+- 修改：Web 浏览器访问跨域模型接口时统一改走 `/__local_ai_proxy/chat/completions`；Vite 开发服务器和生产 Cloudflare Worker 都提供同源代理，转发请求体、Content-Type、Authorization 和上游响应状态；Capacitor 原生应用继续直连模型接口。
+- 决策：浏览器不再直接向模型域名发请求，API Key 只作为当前请求的 Authorization 头转发，不写入日志、备份或 URL；代理失败返回结构化 502，前端继续显示可诊断错误编号。
+- 测试：补充 Web 解析目标路由测试、生产代理转发与上游不可达测试；本地启动 Vite 后使用带 `image_url` 的请求通过代理转发到模拟模型服务，返回 200 和 OpenAI-compatible 响应；类型检查与 36 项领域测试全部通过。
+- 已知问题：生产代理部署需要重新发布 Worker；若用户使用纯静态文件服务器而未部署该 Worker，仍需模型服务自身开放 CORS 或使用本机开发服务器/Android APK。
+- 下一步：用真实模型配置在新构建 Web 页面执行“测试图片能力”和“智能生成”，确认模型本身支持视觉输入。

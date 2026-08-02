@@ -116,10 +116,11 @@ test("routes localhost web AI requests through the local dev proxy", async () =>
   assert.equal(new URL(target, "http://localhost:5173").searchParams.get("target"), "https://api.example.test/v1/chat/completions");
 });
 
-test("does not use the local dev proxy outside localhost web development", () => {
+test("uses the same-origin proxy for hosted web pages too", () => {
   const endpoint = "https://api.example.test/v1/chat/completions";
   assert.equal(resolveAIRequestTarget(endpoint, { pageUrl: "http://localhost:5173/app", isNativeApp: true }), endpoint);
-  assert.equal(resolveAIRequestTarget(endpoint, { pageUrl: "https://recipes.example.test/app", isNativeApp: false }), endpoint);
+  const hostedTarget = resolveAIRequestTarget(endpoint, { pageUrl: "https://recipes.example.test/app", isNativeApp: false });
+  assert.match(hostedTarget, new RegExp(`^${LOCAL_AI_PROXY_PATH}\\?target=`));
   assert.equal(resolveAIRequestTarget("http://localhost:5173/api/ai", { pageUrl: "http://localhost:5173/app", isNativeApp: false }), "http://localhost:5173/api/ai");
 });
 

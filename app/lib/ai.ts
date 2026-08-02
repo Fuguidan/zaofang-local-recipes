@@ -59,13 +59,9 @@ export function resolveAIRequestTarget(
   } catch {
     return endpoint;
   }
-  if (!["http:", "https:"].includes(page.protocol) || !isLocalHostname(page.hostname)) return endpoint;
+  if (!["http:", "https:"].includes(page.protocol)) return endpoint;
   if (page.origin === target.origin) return endpoint;
   return `${LOCAL_AI_PROXY_PATH}?target=${encodeURIComponent(endpoint)}`;
-}
-
-function isLocalHostname(hostname: string) {
-  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname);
 }
 
 function isCapacitorNativeApp() {
