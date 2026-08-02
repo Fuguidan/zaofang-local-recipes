@@ -190,3 +190,12 @@
 - 测试：补充 Web 解析目标路由测试、生产代理转发与上游不可达测试；本地启动 Vite 后使用带 `image_url` 的请求通过代理转发到模拟模型服务，返回 200 和 OpenAI-compatible 响应；类型检查与 36 项领域测试全部通过。
 - 已知问题：生产代理部署需要重新发布 Worker；若用户使用纯静态文件服务器而未部署该 Worker，仍需模型服务自身开放 CORS 或使用本机开发服务器/Android APK。
 - 下一步：用真实模型配置在新构建 Web 页面执行“测试图片能力”和“智能生成”，确认模型本身支持视觉输入。
+
+## 2026-08-02 · Android 原生 HTTP 修复模型请求
+
+- 目标：修复 Android APK 中图片已正常预览，但点击“智能生成”提示远程服务不可用的问题。
+- 原因：APK 之前使用 WebView `fetch` 直连外部模型接口；即使 Android 有网络权限，WebView 仍可能受到 CORS 或 WebView 网络策略限制。
+- 修改：Android/Capacitor 原生环境改用 Capacitor 内置 `CapacitorHttp.request`，直接通过 Android 原生网络栈发送 JSON 和图片 Data URL；浏览器继续使用同源代理，API Key 不写入 URL、日志或备份。
+- 测试：新增原生环境请求路径测试；类型检查、37 项领域测试、Android Web 构建、Capacitor 同步和 Gradle `assembleDebug` 均通过。
+- 产物：重新生成 `artifacts/zaofang-android-debug.apk`，需要卸载旧包或覆盖安装后验证。
+- 已知问题：若仍提示失败，可能是模型服务鉴权、接口地址、模型不支持图片或设备网络本身的问题，此时错误编号可用于继续定位；需要真实设备 logcat 才能进一步区分 TLS/DNS 等底层网络错误。

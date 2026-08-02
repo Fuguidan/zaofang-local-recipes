@@ -146,6 +146,26 @@ test("generateRecipeDraft uses the local proxy target when running on localhost 
   }
 });
 
+test("uses Capacitor native HTTP on Android to bypass WebView CORS", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const requests: string[] = [];
+  globalThis.fetch = (async (input) => {
+    requests.push(String(input));
+    return new Response(JSON.stringify(aiResponse), { status: 200 });
+  }) as typeof fetch;
+  try {
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { Capacitor: { isNativePlatform: () => true } } });
+    const draft = await generateRecipeDraft({ image: new Blob(["image"], { type: "image/jpeg" }), config: enabledConfig });
+    assert.equal(draft.name, "番茄炒蛋");
+    assert.equal(requests[0], enabledConfig.endpoint);
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("generates recipe draft from image and text", async () => {
   const bodies: unknown[] = [];
   const originalFetch = globalThis.fetch;

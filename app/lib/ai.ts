@@ -1,6 +1,7 @@
 import type { AIProviderConfig, RecipeInput } from "./types";
 import { AppError } from "./errors.ts";
 import { isAiSupportedImage } from "./images.ts";
+import { CapacitorHttp } from "@capacitor/core";
 
 export type AIFailure =
   | "auth_failed"
@@ -141,30 +142,49 @@ export async function generateRecipeDraft({
     description?.trim() ? `补充说明：${description.trim()}` : "",
     aiImage ? "请结合图片生成菜谱草稿。" : "请根据菜品名称生成菜谱草稿。",
   ].filter(Boolean).join("\n");
+  const requestBody = {
+    model: config.model,
+    temperature: 0.1,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: dataUrl
+          ? [
+              { type: "text", text },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ]
+          : text,
+      },
+    ],
+  };
   let response: Response;
   try {
-    response = await fetch(resolveAIRequestTarget(config.endpoint), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.1,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: dataUrl
-              ? [
-                  { type: "text", text },
-                  { type: "image_url", image_url: { url: dataUrl } },
-                ]
-              : text,
-          },
-        ],
-      }),
-      signal,
-    });
+    if (isCapacitorNativeApp()) {
+      if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
+      const nativeResponse = await CapacitorHttp.request({
+        url: config.endpoint,
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+        data: requestBody,
+        responseType: "json",
+        connectTimeout: 30_000,
+        readTimeout: 120_000,
+      });
+      response = new Response(
+        typeof nativeResponse.data === "string" ? nativeResponse.data : JSON.stringify(nativeResponse.data),
+        { status: nativeResponse.status, headers: nativeResponse.headers },
+      );
+    } else {
+      response = await fetch(resolveAIRequestTarget(config.endpoint), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+        body: JSON.stringify(requestBody),
+        signal,
+      });
+    }
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new AIRequestError("cors_or_network", error instanceof Error ? error.message : "网络请求失败", undefined, error);
   }
   if (!response.ok) {
