@@ -18,6 +18,7 @@
 - `fix(ai): 增加本机开发代理修复Web端CORS`：localhost Web 测试自动走 Vite 本机代理转发模型请求。
 - `fix(ai): 兼容常见模型文本响应格式`：支持 Chat Completions 和 Responses 常见文本输出位置。
 - `fix(android): 使用系统文件选择器导出ZIP`：Android APK 导出备份时弹出保存位置选择器并支持打开结果文件。
+- `fix(android): 修复导出ZIP选择位置后闪退`：原生导出先写入应用缓存临时文件，再流式复制到用户选择位置。
 
 ## 2026-07-27 · 阶段一：项目、Git 与诊断基础
 
@@ -171,3 +172,12 @@
 - 测试：新增 Android 原生备份可用性、ZIP base64 传递和打开已保存文件的单元测试；类型检查和领域测试通过。
 - 已知问题：Android 系统不会向应用暴露普通文件路径，只返回 `content://` URI；具体展示位置由用户在系统文件选择器中决定。
 - 下一步：在 Android 真机安装最新 APK，验证导出弹框、选择目录、保存 ZIP、打开文件和重新导入。
+
+## 2026-08-02 · Android ZIP 导出闪退修复
+
+- 目标：修复 Android 文件选择器中点击保存后应用闪退、目标目录留下 0B ZIP 占位文件的问题。
+- 修改：`NativeBackupFile` 不再把 ZIP base64 保存在 Activity 回调内存字段中；插件收到 ZIP 后先解码写入应用私有缓存临时文件，并从 `PluginCall` 中移除大字段，只保留临时文件路径、文件名和 MIME；系统文件选择器返回后从临时文件以 64KB 缓冲流式复制到用户选择的 `content://` 位置。
+- 决策：避免在 Capacitor Activity 回调状态中携带大 base64，降低国产 ROM/系统文件管理器切换 Activity 时的崩溃风险；用户取消或失败时清理临时文件。
+- 测试：TypeScript 类型检查、领域单元测试、Web 生产构建、Android 静态资源同步和 Gradle `assembleDebug` 均通过。
+- 已知问题：没有连接真机 logcat，本次根据 0B 占位文件现象和 Activity 回调机制修复；仍需用用户出问题的 Android 手机安装最新 APK 验证。
+- 下一步：真机验证导出 ZIP 文件大小不为 0B，并能通过“打开导出的文件”和“导入备份文件”读取。
