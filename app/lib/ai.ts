@@ -173,14 +173,14 @@ export async function generateRecipeDraft({
     throw new AppError("NETWORK", "未配置或未启用 AI 生成");
   }
   const aiImage = isAiSupportedImage(image) ? image : undefined;
-  if (!aiImage && !name?.trim()) {
-    throw new AppError("VALIDATION", "请先上传可用于 AI 的图片或填写菜名");
+  if (!aiImage && !name?.trim() && !description?.trim()) {
+    throw new AppError("VALIDATION", "请先上传可用于 AI 的图片，或填写菜名/原始说明");
   }
   const dataUrl = aiImage ? await readAsDataUrl(aiImage) : undefined;
   const text = [
     name?.trim() ? `菜品名称：${name.trim()}` : "",
     description?.trim() ? `补充说明：${description.trim()}` : "",
-    aiImage ? "请结合图片生成菜谱草稿。" : "请根据菜品名称生成菜谱草稿。",
+    aiImage ? "请结合图片生成菜谱草稿。" : "请根据提供的菜名或原始说明生成菜谱草稿。",
   ].filter(Boolean).join("\n");
   const requestBody = {
     model: normalizedConfig.model,

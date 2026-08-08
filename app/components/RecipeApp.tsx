@@ -466,6 +466,7 @@ function RecipeEditor({
 }) {
   const value = editor.value;
   const hasName = Boolean(value.name.trim());
+  const hasTextInput = Boolean(value.name.trim() || value.description.trim());
   const aiImage = isAiSupportedImage(value.image) ? value.image : undefined;
   const [parsing, setParsing] = useState(false);
   const [parseNotice, setParseNotice] = useState("");
@@ -475,14 +476,15 @@ function RecipeEditor({
 
   async function generateDraft(mode: "image" | "text") {
     const hasName = Boolean(value.name.trim());
+    const hasTextInput = Boolean(value.name.trim() || value.description.trim());
     const aiImage = mode === "image" && isAiSupportedImage(value.image) ? value.image : undefined;
     const source = aiImage ? "image" : "name";
     if (mode === "image" && !aiImage) {
       setParseNotice(value.image ? "该图片暂不能用于图片 AI，请换成 JPG/PNG/WebP，或改用“仅文字生成”。" : "请先上传可用图片。");
       return;
     }
-    if (mode === "text" && !hasName) {
-      setParseNotice("仅文字生成需要先填写菜名。");
+    if (mode === "text" && !hasTextInput) {
+      setParseNotice("仅文字生成需要先填写菜名或原始说明。");
       return;
     }
     if (!settings.ai.enabled) {
@@ -581,7 +583,7 @@ function RecipeEditor({
               <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"}` : "尚未配置 API Key") : "设置中未开启"}</small></div>
               {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消生成</button> : (
                 <div className="button-row ai-action-row">
-                  <button className="button-secondary" disabled={!hasName} onClick={() => void generateDraft("text")}>仅文字生成</button>
+                  <button className="button-secondary" disabled={!hasTextInput} onClick={() => void generateDraft("text")}>仅文字生成</button>
                   <button className="button-primary" disabled={!aiImage} onClick={() => void generateDraft("image")}>{hasName ? "图片+文字识别" : "识别图片并填充"}</button>
                 </div>
               )}

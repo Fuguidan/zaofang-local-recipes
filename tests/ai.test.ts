@@ -71,6 +71,25 @@ test("generates recipe draft from dish name only", async () => {
   }
 });
 
+test("generates recipe draft from description only", async () => {
+  const bodies: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify(aiResponse), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const draft = await generateRecipeDraft({ description: "家常红烧肉，偏甜口", config: enabledConfig });
+    assert.equal(draft.name, "番茄炒蛋");
+    const body = bodies[0] as { messages: Array<{ content: unknown }> };
+    assert.equal(typeof body.messages[1].content, "string");
+    assert.match(String(body.messages[1].content), /家常红烧肉/);
+    assert.doesNotMatch(String(body.messages[1].content), /image_url/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("accepts OpenAI-compatible text completion payload variants", async () => {
   const variants = [
     { choices: [{ text: recipeJson }] },
@@ -255,7 +274,7 @@ test("rejects unsupported HEIC image without a dish name before calling AI", asy
   try {
     await assert.rejects(
       () => generateRecipeDraft({ image: new Blob(["heic-bytes"], { type: "image/heic" }), config: enabledConfig }),
-      /请先上传可用于 AI 的图片或填写菜名/,
+      /请先上传可用于 AI 的图片，或填写菜名\/原始说明/,
     );
     assert.equal(calls, 0);
   } finally {
