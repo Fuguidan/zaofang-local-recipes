@@ -22,6 +22,7 @@ import { createBackup, parseBackup } from "../lib/backup";
 import { AIRequestError, generateRecipeDraft, normalizeAIConfig, resolveAIRequestTarget, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
+import { ImageEditorDialog } from "./ImageEditorDialog";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
 type EditorMode = "create" | "edit";
@@ -470,6 +471,7 @@ function RecipeEditor({
   const aiImage = isAiSupportedImage(value.image) ? value.image : undefined;
   const [parsing, setParsing] = useState(false);
   const [parseNotice, setParseNotice] = useState("");
+  const [imageEditor, setImageEditor] = useState<{ source: Blob; sourceName: string }>();
   const abortRef = useRef<AbortController | null>(null);
   const [customTag, setCustomTag] = useState("");
   const patch = <K extends keyof RecipeInput>(key: K, next: RecipeInput[K]) => onChange({ ...value, [key]: next });
@@ -541,6 +543,7 @@ function RecipeEditor({
   }
 
   return (
+    <>
     <div className="modal-backdrop">
       <section className="drawer editor-drawer" role="dialog" aria-modal="true" aria-label={editor.mode === "create" ? "添加菜谱" : "编辑菜谱"}>
         <header className="drawer-header">
@@ -560,7 +563,10 @@ function RecipeEditor({
                     setParseNotice(isHeicImage(file) ? "正在将 HEIC 图片转换为 JPEG…" : "");
                     const normalized = await normalizeRecipeImageFile(file);
                     onChange({ ...value, image: normalized.file, imageName: normalized.file.name });
-                    if (normalized.status === "converted") setParseNotice("HEIC 图片已在本机转换为 JPEG，可继续保存或智能生成。");
+                    if (isAiSupportedImage(normalized.file)) {
+                      setImageEditor({ source: normalized.file, sourceName: normalized.file.name });
+                    }
+                    if (normalized.status === "converted") setParseNotice("HEIC 图片已在本机转换为 JPEG，可继续裁剪、保存或智能生成。");
                     else if (normalized.status === "unsupported") {
                       setParseNotice("已保留原始 HEIC，可保存；该图片暂不能用于图片 AI，请填写菜名生成或换成 JPG/PNG/WebP。");
                       await logger.warn("image", "heic_conversion_unsupported", undefined, {
@@ -578,6 +584,12 @@ function RecipeEditor({
                 })();
               }} />
             </label>
+            {value.image && isAiSupportedImage(value.image) && (
+              <div className="image-edit-actions">
+                <button className="button-secondary" onClick={() => setImageEditor({ source: value.image!, sourceName: value.imageName || "recipe-image.jpg" })}>裁剪 / 旋转 / 缩放</button>
+                <small>编辑过程完全在本机完成，应用后保存为 JPEG。</small>
+              </div>
+            )}
             <label className="field"><span>原始说明</span><textarea rows={3} value={value.description} onChange={(event) => patch("description", event.target.value)} placeholder="例如：外婆做的红烧肉，偏甜口……" /></label>
             <div className="parse-panel">
               <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"}` : "尚未配置 API Key") : "设置中未开启"}</small></div>
@@ -650,6 +662,19 @@ function RecipeEditor({
         <footer className="drawer-footer"><button className="button-ghost" onClick={onCancel}>取消</button><button className="button-primary" onClick={onSave}>保存到本机</button></footer>
       </section>
     </div>
+    {imageEditor && (
+      <ImageEditorDialog
+        source={imageEditor.source}
+        sourceName={imageEditor.sourceName}
+        onCancel={() => setImageEditor(undefined)}
+        onApply={(file) => {
+          onChange({ ...value, image: file, imageName: file.name });
+          setImageEditor(undefined);
+          setParseNotice("图片编辑完成，已应用裁剪、旋转和缩放效果。");
+        }}
+      />
+    )}
+    </>
   );
 }
 
