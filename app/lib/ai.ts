@@ -137,22 +137,34 @@ export async function parseRecipeImage(
 }
 
 export async function testAIVisionCapability(config: AIProviderConfig, signal?: AbortSignal) {
-  await generateRecipeDraft({
-    image: tinyJpegBlob(),
-    name: "图片能力测试",
-    description: "仅测试接口是否接受图片输入",
-    config,
-    signal,
-  });
+  const normalizedConfig = normalizeAIConfig(config);
+  if (!normalizedConfig.apiKey || !normalizedConfig.endpoint || !normalizedConfig.model) {
+    throw new AppError("NETWORK", "未配置 AI 接口地址、模型或 API Key");
+  }
+  const dataUrl = await readAsDataUrl(visionTestPngBlob());
+  await sendAIChatRequest({
+    model: normalizedConfig.model,
+    temperature: 0,
+    max_tokens: 32,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: "这是图片能力连接测试。请确认已收到图片并简短回复。" },
+        { type: "image_url", image_url: { url: dataUrl } },
+      ],
+    }],
+  }, normalizedConfig, signal);
 }
 
-function tinyJpegBlob() {
-  const base64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGqP//EABQQAQAAAAAAAAAAAAAAAAAAABD/2gAIAQEAAQUCf//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8BP//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8BP//Z";
-  if (typeof atob === "undefined") return new Blob([Buffer.from(base64, "base64")], { type: "image/jpeg" });
+function visionTestPngBlob() {
+  // 256×256 orange test card with a green circle. A real-sized PNG avoids
+  // providers rejecting the previous 1×1 JPEG before the model sees it.
+  const base64 = "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAC80lEQVR42u3TMRHAMAwEQeEJKyMKgjTBaAAG4fJ25hBIv7P/JWUbJxAAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASAALAFQSABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEQLTne29yQAByo4cBALsnAQC7JwEA08cAANPHAADTxwAA08cAANPHAADrZwAA62cAANPHAADrZwAA62cAAOtnAADrZwAA62cAAOtnAADrZwAA62cAAOtnAAAAAADA9BkY61fZwFi/ygYAEADWr6oBAASA9atqAAABYP2qGgBAAFi/qgYAEADWr6oBAAQAAALA+hU0AIAAAEAAWL+CBgAQAAAIAAAEgPWrZQAAAQCAAABAAAAgAAAQAAAIAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMCA9QMAAAAAAAAAAAAAAAAD1g8AAAAAAAAAADBg/QAAAAAAAAAAAAPWDwAAAADAgPUDAAAAADBg/QAAAAAADFg/AAAAAAAD1g8AAAAAwID1A8CA9QPAgPUDAAAAADBg/QAwYP0AMGD9ADBg/QAwYP0AtA14MQBdA54LQNeAtwLQNeChAEQZeCIAXQPeB0DXgMcBEGXgWQBEGXgQAFEGngJAlIFHABBl4PgAFCU4NQBFCQ4LQA6DAwIgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgAFxBAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASAAIAAkAqdgBuMLbeWvr5IwAAAAASUVORK5CYII=";
+  if (typeof atob === "undefined") return new Blob([Buffer.from(base64, "base64")], { type: "image/png" });
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return new Blob([bytes], { type: "image/jpeg" });
+  return new Blob([bytes], { type: "image/png" });
 }
 
 export async function generateRecipeDraft({
@@ -198,6 +210,16 @@ export async function generateRecipeDraft({
       },
     ],
   };
+  const completion = await sendAIChatRequest(requestBody, normalizedConfig, signal);
+  const content = stripJsonFence(completion.content);
+  try {
+    return normalizeDraft(JSON.parse(content) as Partial<RecipeInput>);
+  } catch (error) {
+    throw new AIRequestError("bad_recipe_json", "模型响应不是有效菜谱 JSON", completion.status, error);
+  }
+}
+
+async function sendAIChatRequest(requestBody: unknown, normalizedConfig: AIProviderConfig, signal?: AbortSignal) {
   let response: Response;
   try {
     if (isCapacitorNativeApp()) {
@@ -241,11 +263,7 @@ export async function generateRecipeDraft({
   }
   const content = stripJsonFence(extractModelContent(body));
   if (!content) throw new AIRequestError("bad_model_payload", "模型未返回可识别的文本内容（字段：" + summarizePayloadShape(body) + "）", response.status);
-  try {
-    return normalizeDraft(JSON.parse(content) as Partial<RecipeInput>);
-  } catch (error) {
-    throw new AIRequestError("bad_recipe_json", "模型响应不是有效菜谱 JSON", response.status, error);
-  }
+  return { content, status: response.status };
 }
 
 function extractModelContent(body: unknown): string {

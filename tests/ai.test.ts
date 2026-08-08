@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AIRequestError, generateRecipeDraft, LOCAL_AI_PROXY_PATH, normalizeAIConfig, normalizeAIEndpoint, resolveAIRequestTarget } from "../app/lib/ai.ts";
+import { AIRequestError, generateRecipeDraft, LOCAL_AI_PROXY_PATH, normalizeAIConfig, normalizeAIEndpoint, resolveAIRequestTarget, testAIVisionCapability } from "../app/lib/ai.ts";
 import { isHeicImage } from "../app/lib/images.ts";
 import type { AIProviderConfig } from "../app/lib/types.ts";
 
@@ -238,6 +238,26 @@ test("generates recipe draft from image only and sends image_url", async () => {
     assert.match(body.messages[1].content[0].text || "", /结合图片/);
     assert.equal(body.messages[1].content[1].type, "image_url");
     assert.match(body.messages[1].content[1].image_url?.url || "", /^data:image\/jpeg;base64,/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("vision capability test uses a provider-safe image and does not require recipe JSON", async () => {
+  const bodies: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ choices: [{ message: { content: "图片请求已接收" } }] }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    await testAIVisionCapability(enabledConfig);
+    const body = bodies[0] as { messages: Array<{ content: Array<{ type: string; image_url?: { url: string } }> }> };
+    const dataUrl = body.messages[0].content[1].image_url?.url || "";
+    assert.match(dataUrl, /^data:image\/png;base64,/);
+    const imageBytes = Buffer.from(dataUrl.split(",")[1], "base64");
+    assert.equal(imageBytes.readUInt32BE(16), 256);
+    assert.equal(imageBytes.readUInt32BE(20), 256);
   } finally {
     globalThis.fetch = originalFetch;
   }
