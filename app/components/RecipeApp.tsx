@@ -10,6 +10,7 @@ import type {
   Ingredient,
   LogEntry,
   MealType,
+  NutrientKey,
   Recipe,
   RecipeInput,
   RecommendationHistory,
@@ -23,6 +24,7 @@ import { AIRequestError, generateRecipeDraft, normalizeAIConfig, resolveAIReques
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
 import { ImageEditorDialog } from "./ImageEditorDialog";
+import { calculateRecipeNutrition, formatNutrientValue, getFoodReference, LOCAL_NUTRITION_DATA_INFO, NUTRIENT_KEYS, NUTRIENT_META, searchFoods, suggestIngredientNutrition } from "../lib/nutrition";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
 type EditorMode = "create" | "edit";
@@ -150,6 +152,7 @@ export default function RecipeApp() {
   const [settings, setSettings] = useState<AppSettings>({
     debugMode: false,
     ai: { endpoint: "https://api.deepseek.com/chat/completions", model: "", apiKey: "", enabled: false },
+    nutrition: { visibleNutrients: ["energyKcal", "proteinG", "carbohydrateG", "fatG"] },
   });
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -316,6 +319,7 @@ export default function RecipeApp() {
             {view === "recipes" && (
               <RecipesView
                 recipes={filteredRecipes}
+                settings={settings}
                 total={recipes.length}
                 search={search}
                 onSearch={setSearch}
@@ -326,7 +330,7 @@ export default function RecipeApp() {
               />
             )}
             {view === "recommend" && (
-              <RecommendView recipes={recipes} history={history} onHistory={async (entry) => {
+              <RecommendView recipes={recipes} history={history} settings={settings} onHistory={async (entry) => {
                 await historyStore.put(entry);
                 setHistory((current) => [...current, entry]);
               }} />
@@ -336,9 +340,12 @@ export default function RecipeApp() {
                 recipes={recipes}
                 history={history}
                 settings={settings}
-                onImported={(nextRecipes, nextHistory) => {
+                onImported={async (nextRecipes, nextHistory, importedSettings) => {
                   setRecipes(nextRecipes);
                   setHistory(nextHistory);
+                  const nextSettings = { ...settings, debugMode: importedSettings.debugMode, nutrition: importedSettings.nutrition };
+                  await settingsStore.put(nextSettings);
+                  setSettings(nextSettings);
                   setNotice(`成功导入 ${nextRecipes.length} 道菜谱`);
                 }}
                 onCleared={() => { setRecipes([]); setHistory([]); setNotice("本地业务数据已清空"); }}
@@ -376,7 +383,7 @@ export default function RecipeApp() {
         />
       )}
       {selectedRecipe && (
-        <RecipeDetail recipe={selectedRecipe} onClose={() => setSelectedRecipe(undefined)} onEdit={() => editExisting(selectedRecipe)} />
+        <RecipeDetail recipe={selectedRecipe} visibleNutrients={settings.nutrition.visibleNutrients} onClose={() => setSelectedRecipe(undefined)} onEdit={() => editExisting(selectedRecipe)} />
       )}
       {deleteTarget && (
         <ConfirmDialog
@@ -395,6 +402,7 @@ export default function RecipeApp() {
 
 function RecipesView({
   recipes,
+  settings,
   total,
   search,
   onSearch,
@@ -404,6 +412,7 @@ function RecipesView({
   onDelete,
 }: {
   recipes: Recipe[];
+  settings: AppSettings;
   total: number;
   search: string;
   onSearch: (value: string) => void;
@@ -432,6 +441,7 @@ function RecipesView({
                   <div className="card-meta"><span>{recipe.dietType}</span><span>{recipe.duration} 分钟</span></div>
                   <h2>{recipe.name}</h2>
                   <p>{recipe.description || "还没有补充说明"}</p>
+                  <NutritionSummary recipe={recipe} visibleNutrients={settings.nutrition.visibleNutrients} compact />
                   <div className="tag-row">{[...recipe.flavors, ...recipe.tags].slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}</div>
                   {recipe.incomplete && <span className="draft-badge">待完善</span>}
                 </div>
@@ -517,7 +527,7 @@ function RecipeEditor({
         ...parsed,
         image: value.image,
         imageName: value.imageName,
-        ingredients: (parsed.ingredients || value.ingredients).map((item) => ({ ...item, id: item.id || crypto.randomUUID() })),
+        ingredients: (parsed.ingredients || value.ingredients).map((item) => suggestIngredientNutrition({ ...item, id: item.id || crypto.randomUUID() })),
       });
       setParseNotice("识别完成，内容已自动填入；确认无误后点击“保存到本机”。");
       await logger.info("ai", "recipe_generate_success", operationId, { result: "success", stage: source, durationMs: Math.round(performance.now() - started) });
@@ -624,22 +634,43 @@ function RecipeEditor({
           </section>
           <section className="form-section">
             <div className="section-title"><span>03</span><div><h3>食材</h3><p>用量按原菜谱记录，不随推荐人数自动换算。</p></div></div>
+            <div className="nutrition-match-toolbar">
+              <span>营养值按标准食材和可食重量在本机计算。</span>
+              <button className="button-secondary" onClick={() => patch("ingredients", value.ingredients.map(suggestIngredientNutrition))}>自动匹配全部</button>
+            </div>
             <div className="dynamic-list">
-              {value.ingredients.map((ingredient, index) => (
-                <div className="ingredient-row" key={ingredient.id}>
-                  <span className="row-index">{index + 1}</span>
-                  <input aria-label={`食材${index + 1}名称`} placeholder="食材" value={ingredient.name} onChange={(event) => {
-                    const next = [...value.ingredients]; next[index] = { ...ingredient, name: event.target.value }; patch("ingredients", next);
-                  }} />
-                  <input aria-label={`食材${index + 1}用量`} placeholder="用量" value={ingredient.amount} onChange={(event) => {
-                    const next = [...value.ingredients]; next[index] = { ...ingredient, amount: event.target.value }; patch("ingredients", next);
-                  }} />
-                  <input aria-label={`食材${index + 1}单位`} placeholder="单位" value={ingredient.unit} onChange={(event) => {
-                    const next = [...value.ingredients]; next[index] = { ...ingredient, unit: event.target.value }; patch("ingredients", next);
-                  }} />
-                  <button className="icon-button" onClick={() => patch("ingredients", value.ingredients.filter((_, i) => i !== index))}>×</button>
-                </div>
-              ))}
+              {value.ingredients.map((ingredient, index) => {
+                const suggestedFoods = searchFoods(ingredient.name, 8);
+                const selectedFood = getFoodReference(ingredient.foodId);
+                const options = selectedFood && !suggestedFoods.some((food) => food.id === selectedFood.id) ? [selectedFood, ...suggestedFoods] : suggestedFoods;
+                return (
+                  <div className="ingredient-entry" key={ingredient.id}>
+                    <div className="ingredient-row">
+                      <span className="row-index">{index + 1}</span>
+                      <input aria-label={`食材${index + 1}名称`} placeholder="食材" value={ingredient.name} onChange={(event) => {
+                        const next = [...value.ingredients]; next[index] = { ...ingredient, name: event.target.value, foodId: undefined, foodName: undefined, nutritionMatch: "unmatched" }; patch("ingredients", next);
+                      }} />
+                      <input aria-label={`食材${index + 1}用量`} placeholder="用量" value={ingredient.amount} onChange={(event) => {
+                        const next = [...value.ingredients]; next[index] = { ...ingredient, amount: event.target.value }; patch("ingredients", next);
+                      }} />
+                      <input aria-label={`食材${index + 1}单位`} placeholder="单位" value={ingredient.unit} onChange={(event) => {
+                        const next = [...value.ingredients]; next[index] = { ...ingredient, unit: event.target.value }; patch("ingredients", next);
+                      }} />
+                      <button className="icon-button" onClick={() => patch("ingredients", value.ingredients.filter((_, i) => i !== index))}>×</button>
+                    </div>
+                    <div className="ingredient-nutrition-row">
+                      <label><span>可食重量</span><input type="number" min="0" step="1" aria-label={`食材${index + 1}可食重量克`} placeholder="克" value={ingredient.grams || ""} onChange={(event) => {
+                        const next = [...value.ingredients]; next[index] = { ...ingredient, grams: Number(event.target.value) > 0 ? Number(event.target.value) : undefined }; patch("ingredients", next);
+                      }} /></label>
+                      <label><span>标准食材</span><select aria-label={`食材${index + 1}标准食材`} value={ingredient.foodId || ""} onChange={(event) => {
+                        const food = getFoodReference(event.target.value);
+                        const next = [...value.ingredients]; next[index] = { ...ingredient, foodId: food?.id, foodName: food?.name, nutritionMatch: food ? "confirmed" : "unmatched" }; patch("ingredients", next);
+                      }}><option value="">未匹配</option>{options.map((food) => <option key={food.id} value={food.id}>{food.name}</option>)}</select></label>
+                      <span className={`nutrition-match-status ${ingredient.foodId && ingredient.grams ? "ready" : "missing"}`}>{ingredient.foodId ? (ingredient.grams ? "可计算" : "缺少克数") : "未匹配"}</span>
+                    </div>
+                  </div>
+                );
+              })}
               <button className="add-row" onClick={() => patch("ingredients", [...value.ingredients, { id: crypto.randomUUID(), name: "", amount: "", unit: "" }])}>＋ 添加食材</button>
             </div>
           </section>
@@ -718,7 +749,36 @@ function ChoiceGroup<T extends string>({
   );
 }
 
-function RecipeDetail({ recipe, onClose, onEdit }: { recipe: Recipe; onClose: () => void; onEdit: () => void }) {
+function NutritionSummary({ recipe, visibleNutrients, compact = false }: { recipe: Recipe; visibleNutrients: NutrientKey[]; compact?: boolean }) {
+  const nutrition = calculateRecipeNutrition(recipe.ingredients);
+  if (!visibleNutrients.length || !nutrition.calculatedCount) return null;
+  return (
+    <div className={compact ? "nutrition-summary nutrition-summary-compact" : "nutrition-summary"}>
+      {visibleNutrients.map((key) => <span key={key}><small>{NUTRIENT_META[key].label}</small><strong>{formatNutrientValue(key, nutrition.totals[key])}</strong></span>)}
+    </div>
+  );
+}
+
+function RecipeNutritionDetail({ recipe, visibleNutrients }: { recipe: Recipe; visibleNutrients: NutrientKey[] }) {
+  const nutrition = calculateRecipeNutrition(recipe.ingredients);
+  if (!visibleNutrients.length) return <section className="nutrition-detail"><h3>营养指标</h3><p className="inline-notice">设置中尚未选择要展示的营养指标。</p></section>;
+  return (
+    <section className="nutrition-detail">
+      <h3>营养指标</h3>
+      {nutrition.calculatedCount ? <>
+        <NutritionSummary recipe={recipe} visibleNutrients={visibleNutrients} />
+        <div className="nutrition-density"><span>蛋白质密度</span><strong>{nutrition.proteinDensity.toFixed(1)} g / 100 kcal</strong></div>
+        {!nutrition.complete && <p className="inline-notice">已计算 {nutrition.calculatedCount}/{nutrition.ingredientCount} 项食材；缺少克数或标准食材的部分未计入，结果可能偏低。</p>}
+        <div className="nutrition-table-wrap"><table className="nutrition-table"><thead><tr><th>食材</th><th>重量</th>{visibleNutrients.map((key) => <th key={key}>{NUTRIENT_META[key].label}</th>)}</tr></thead><tbody>
+          {nutrition.breakdown.filter((item) => item.ingredient.name.trim()).map((item) => <tr key={item.ingredient.id}><td>{item.ingredient.name}<small>{item.food?.name || "未匹配"}</small></td><td>{item.grams ? `${item.grams}g` : "—"}</td>{visibleNutrients.map((key) => <td key={key}>{item.nutrients ? formatNutrientValue(key, item.nutrients[key]) : "—"}</td>)}</tr>)}
+          <tr className="nutrition-total-row"><td>全菜总计</td><td>—</td>{visibleNutrients.map((key) => <td key={key}>{formatNutrientValue(key, nutrition.totals[key])}</td>)}</tr>
+        </tbody></table></div>
+      </> : <p className="inline-notice">尚未计算。编辑菜谱，为食材选择标准食材并填写可食重量。</p>}
+    </section>
+  );
+}
+
+function RecipeDetail({ recipe, visibleNutrients, onClose, onEdit }: { recipe: Recipe; visibleNutrients: NutrientKey[]; onClose: () => void; onEdit: () => void }) {
   return (
     <div className="modal-backdrop">
       <section className="drawer detail-drawer" role="dialog" aria-modal="true" aria-label={`${recipe.name}详情`}>
@@ -728,6 +788,7 @@ function RecipeDetail({ recipe, onClose, onEdit }: { recipe: Recipe; onClose: ()
           <div className="detail-stats"><span><b>{recipe.duration}</b>分钟</span><span><b>{recipe.difficulty}</b>难度</span><span><b>{recipe.dietType}</b>分类</span></div>
           <p className="detail-description">{recipe.description}</p>
           <div className="tag-row">{[...recipe.flavors, ...recipe.tags].map((tag) => <span key={tag}>#{tag}</span>)}</div>
+          <RecipeNutritionDetail recipe={recipe} visibleNutrients={visibleNutrients} />
           <section><h3>准备食材</h3><ul className="ingredient-list">{recipe.ingredients.map((item) => <li key={item.id}><span>{item.name}</span><strong>{item.amount} {item.unit}</strong></li>)}</ul></section>
           <section><h3>开始制作</h3><ol className="steps-list">{recipe.steps.map((step, index) => <li key={index}><span>{index + 1}</span><p>{step}</p></li>)}</ol></section>
         </div>
@@ -740,10 +801,12 @@ function RecipeDetail({ recipe, onClose, onEdit }: { recipe: Recipe; onClose: ()
 function RecommendView({
   recipes,
   history,
+  settings,
   onHistory,
 }: {
   recipes: Recipe[];
   history: RecommendationHistory[];
+  settings: AppSettings;
   onHistory: (entry: RecommendationHistory) => Promise<void>;
 }) {
   const [people, setPeople] = useState(2);
@@ -820,7 +883,7 @@ function RecommendView({
           )}
         </div>
       </div>
-      {selected && <RecipeDetail recipe={selected} onClose={() => setSelected(undefined)} onEdit={() => setSelected(undefined)} />}
+      {selected && <RecipeDetail recipe={selected} visibleNutrients={settings.nutrition.visibleNutrients} onClose={() => setSelected(undefined)} onEdit={() => setSelected(undefined)} />}
     </section>
   );
 }
@@ -837,7 +900,7 @@ function BackupView({
   recipes: Recipe[];
   settings: AppSettings;
   history: RecommendationHistory[];
-  onImported: (recipes: Recipe[], history: RecommendationHistory[]) => void;
+  onImported: (recipes: Recipe[], history: RecommendationHistory[], settings: Pick<AppSettings, "debugMode" | "nutrition">) => void | Promise<void>;
   onCleared: () => void;
   onError: (error: AppError) => void;
   refreshLogs: () => Promise<void>;
@@ -935,7 +998,7 @@ function BackupView({
     try {
       await recipeStore.replaceAll(next);
       for (const item of preview.history) await historyStore.put(item);
-      onImported(next, [...history, ...preview.history]);
+      await onImported(next, [...history, ...preview.history], preview.settings);
       setPreview(undefined);
       await logger.info("backup", "import_committed", undefined, { result: "success", message: `records=${preview.recipes.length};duplicates=${duplicates}` });
       await refreshLogs();
@@ -1073,6 +1136,32 @@ function SettingsView({
           <label className="field"><span>API Key</span><input type="password" autoComplete="off" value={draft.ai.apiKey} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, apiKey: event.target.value } })} placeholder="仅保存在当前浏览器" /></label>
           {testNotice && <p className="inline-notice">{testNotice}</p>}
           <div className="button-row"><button className="button-secondary" disabled={testing} onClick={() => void testConnection()}>{testing ? "正在测试…" : "测试文本连接"}</button><button className="button-secondary" disabled={testing} onClick={() => void testVision()}>测试图片能力</button><button className="button-primary" onClick={() => void onSettings({ ...draft, ai: normalizeAIConfig(draft.ai) })}>保存设置</button></div>
+        </section>
+        <section className="panel settings-panel nutrition-settings-panel">
+          <div className="panel-heading"><div><span className="eyebrow">本地计算 · 无需联网</span><h2>营养指标显示</h2></div><span className="local-data-count">{LOCAL_NUTRITION_DATA_INFO.count.toLocaleString("zh-CN")} 条</span></div>
+          <p>勾选你关心的指标。设置会应用到菜谱卡片、详情和推荐结果；全部取消时不显示营养信息。</p>
+          <div className="nutrition-selector" role="group" aria-label="选择要展示的营养指标">
+            {NUTRIENT_KEYS.map((key) => {
+              const checked = draft.nutrition.visibleNutrients.includes(key);
+              return (
+                <label className={`nutrition-option${checked ? " selected" : ""}`} key={key}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => {
+                      const visibleNutrients = event.target.checked
+                        ? NUTRIENT_KEYS.filter((item) => item === key || draft.nutrition.visibleNutrients.includes(item))
+                        : draft.nutrition.visibleNutrients.filter((item) => item !== key);
+                      setDraft({ ...draft, nutrition: { visibleNutrients } });
+                    }}
+                  />
+                  <span><strong>{NUTRIENT_META[key].label}</strong><small>{NUTRIENT_META[key].unit}</small></span>
+                </label>
+              );
+            })}
+          </div>
+          <p className="settings-hint">营养值按每项食材的克数和匹配的本地标准食品计算。数据版本：{LOCAL_NUTRITION_DATA_INFO.version}。</p>
+          <div className="button-row"><button className="button-primary" onClick={() => void onSettings(draft)}>保存营养显示</button></div>
         </section>
         <section className="panel settings-panel">
           <div className="panel-heading"><div><span className="eyebrow">只在本机</span><h2>调试模式</h2></div><label className="switch"><input type="checkbox" checked={draft.debugMode} onChange={(event) => { const next = { ...draft, debugMode: event.target.checked }; setDraft(next); void onSettings(next); }} /><span /></label></div>

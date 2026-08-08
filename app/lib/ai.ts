@@ -13,7 +13,7 @@ export type AIFailure =
   | "bad_recipe_json";
 
 const SYSTEM_PROMPT = `你是菜谱结构化助手。根据用户提供的菜品图片、菜品名称或补充文字生成菜谱草稿，仅返回JSON：
-{"name":"","description":"","ingredients":[{"name":"","amount":"","unit":"","note":""}],"steps":[""],"meals":["breakfast|lunch|dinner"],"flavors":["清淡|辛辣|酸甜|咸鲜|麻辣|鲜香"],"tags":[],"dietType":"荤菜|素菜|主食|汤羹","duration":30,"difficulty":"简单|适中|进阶"}。不要返回Markdown。`;
+{"name":"","description":"","ingredients":[{"name":"","amount":"","unit":"","grams":100,"note":""}],"steps":[""],"meals":["breakfast|lunch|dinner"],"flavors":["清淡|辛辣|酸甜|咸鲜|麻辣|鲜香"],"tags":[],"dietType":"荤菜|素菜|主食|汤羹","duration":30,"difficulty":"简单|适中|进阶"}。grams 是可食用重量估计，无法判断时省略。不要返回Markdown。`;
 
 const MEALS = new Set(["breakfast", "lunch", "dinner"]);
 const FLAVORS = new Set(["清淡", "辛辣", "酸甜", "咸鲜", "麻辣", "鲜香"]);
@@ -355,6 +355,7 @@ function normalizeDraft(draft: Partial<RecipeInput>): Partial<RecipeInput> {
             name: item.name,
             amount: typeof item.amount === "string" ? item.amount : "",
             unit: typeof item.unit === "string" ? item.unit : "",
+            grams: typeof item.grams === "number" && Number.isFinite(item.grams) && item.grams > 0 ? item.grams : undefined,
             note: typeof item.note === "string" ? item.note : undefined,
           }))
       : undefined,

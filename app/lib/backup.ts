@@ -1,10 +1,10 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import type { AppSettings, BackupManifest, Recipe, RecommendationHistory } from "./types";
+import type { AppSettings, BackupManifest, NutrientKey, Recipe, RecommendationHistory } from "./types";
 import { AppError } from "./errors.ts";
 
 interface BackupPayload {
   recipes: Array<Omit<Recipe, "image"> & { imagePath?: string }>;
-  settings: Pick<AppSettings, "debugMode">;
+  settings: Pick<AppSettings, "debugMode" | "nutrition">;
   history: RecommendationHistory[];
 }
 
@@ -23,7 +23,7 @@ export function createBackup(
       imageFiles.push(imagePath);
       return { ...recipe, imagePath };
     }),
-    settings: { debugMode: settings.debugMode },
+    settings: { debugMode: settings.debugMode, nutrition: settings.nutrition },
     history,
   };
   const manifest: BackupManifest = {
@@ -62,7 +62,16 @@ export async function parseBackup(file: File) {
       const mime = extension === "jpg" ? "image/jpeg" : `image/${extension}`;
       return { ...recipe, image: new Blob([bytes as BlobPart], { type: mime }) } as Recipe;
     });
-    return { manifest, recipes, settings: payload.settings, history: payload.history || [] };
+    const allowedNutrients = new Set<NutrientKey>(["energyKcal", "proteinG", "carbohydrateG", "fatG", "fiberG", "sodiumMg"]);
+    const visibleNutrients = Array.isArray(payload.settings?.nutrition?.visibleNutrients)
+      ? payload.settings.nutrition.visibleNutrients.filter((key): key is NutrientKey => allowedNutrients.has(key as NutrientKey))
+      : ["energyKcal", "proteinG", "carbohydrateG", "fatG"] satisfies NutrientKey[];
+    return {
+      manifest,
+      recipes,
+      settings: { debugMode: Boolean(payload.settings?.debugMode), nutrition: { visibleNutrients } },
+      history: payload.history || [],
+    };
   } catch (error) {
     throw new AppError("BACKUP", error instanceof Error ? error.message : String(error), error);
   }

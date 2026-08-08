@@ -90,6 +90,7 @@ const defaultSettings: AppSettings = {
     apiKey: "",
     enabled: envValue("VITE_AI_ENABLED") === "true",
   },
+  nutrition: { visibleNutrients: ["energyKcal", "proteinG", "carbohydrateG", "fatG"] },
 };
 
 function envValue(key: string) {
@@ -100,7 +101,18 @@ function envValue(key: string) {
 export const settingsStore = {
   get: async () =>
     transact(["settings"], "readonly", async (tx) => {
-      return (await requestResult<AppSettings | undefined>(tx.objectStore("settings").get("app"))) || defaultSettings;
+      const saved = await requestResult<Partial<AppSettings> | undefined>(tx.objectStore("settings").get("app"));
+      if (!saved) return defaultSettings;
+      return {
+        ...defaultSettings,
+        ...saved,
+        ai: { ...defaultSettings.ai, ...saved.ai },
+        nutrition: {
+          visibleNutrients: Array.isArray(saved.nutrition?.visibleNutrients)
+            ? saved.nutrition.visibleNutrients
+            : defaultSettings.nutrition.visibleNutrients,
+        },
+      };
     }),
   put: (settings: AppSettings) =>
     transact(["settings"], "readwrite", async (tx) => {

@@ -7,6 +7,7 @@ import type { AppSettings, Recipe } from "../app/lib/types.ts";
 const settings: AppSettings = {
   debugMode: true,
   ai: { endpoint: "https://example.test", model: "vision", apiKey: "sk-super-secret", enabled: true },
+  nutrition: { visibleNutrients: ["energyKcal", "proteinG", "fiberG"] },
 };
 
 const sample: Recipe = {
@@ -36,7 +37,7 @@ test("exports and imports recipes and images without secrets", async () => {
   const parsed = await parseBackup(file);
   assert.equal(parsed.recipes[0].name, "测试菜");
   assert.equal(await parsed.recipes[0].image?.text(), "image-bytes");
-  assert.deepEqual(parsed.settings, { debugMode: true });
+  assert.deepEqual(parsed.settings, { debugMode: true, nutrition: { visibleNutrients: ["energyKcal", "proteinG", "fiberG"] } });
 });
 
 test("rejects damaged zip files", async () => {

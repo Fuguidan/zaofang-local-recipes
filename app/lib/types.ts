@@ -9,6 +9,25 @@ export interface Ingredient {
   amount: string;
   unit: string;
   note?: string;
+  grams?: number;
+  foodId?: string;
+  foodName?: string;
+  nutritionMatch?: "confirmed" | "suggested" | "unmatched";
+}
+
+export type NutrientKey = "energyKcal" | "proteinG" | "carbohydrateG" | "fatG" | "fiberG" | "sodiumMg";
+
+export interface NutrientValues {
+  energyKcal: number;
+  proteinG: number;
+  carbohydrateG: number;
+  fatG: number;
+  fiberG: number;
+  sodiumMg: number;
+}
+
+export interface NutritionSettings {
+  visibleNutrients: NutrientKey[];
 }
 
 export interface Recipe {
@@ -79,6 +98,7 @@ export interface LogEntry {
 export interface AppSettings {
   debugMode: boolean;
   ai: AIProviderConfig;
+  nutrition: NutritionSettings;
 }
 
 export interface BackupManifest {

@@ -170,6 +170,15 @@ p { color: var(--muted); line-height: 1.75; }
 .inline-notice { margin: 10px 0 0; padding: 10px 12px; background: #fff6dd; color: #755e2d; font-size: .74rem; border-radius: 9px; }
 .dynamic-list { display: grid; gap: 10px; }
 .ingredient-row, .step-row { display: grid; grid-template-columns: 28px minmax(0,2fr) minmax(80px,1fr) 70px 34px; gap: 8px; align-items: center; }
+.ingredient-entry { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.48); }
+.ingredient-entry .ingredient-row { padding: 0; border: 0; background: transparent; }
+.nutrition-match-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.nutrition-match-toolbar > span { margin: 0; color: var(--muted); font-size: .7rem; }
+.ingredient-nutrition-row { display: grid; grid-template-columns: minmax(110px,.55fr) minmax(220px,1.45fr) auto; gap: 10px; align-items: end; padding-left: 36px; }
+.ingredient-nutrition-row label { display: grid; gap: 5px; color: var(--muted); font-size: .66rem; }
+.ingredient-nutrition-row input, .ingredient-nutrition-row select { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--ink); padding: 9px 10px; }
+.nutrition-match-status { align-self: center; white-space: nowrap; border-radius: 999px; padding: 6px 9px; background: #f2e9dc; color: var(--muted); font-size: .62rem; }
+.nutrition-match-status.ready { background: var(--green-soft); color: #405542; }
 .step-row { grid-template-columns: 28px 1fr 34px; align-items: flex-start; }
 .row-index { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; background: #eee5d8; color: var(--muted); font-size: .68rem; margin-top: 1px; }
 .add-row { border: 1px dashed #ccbda9; background: transparent; color: var(--accent); border-radius: 10px; padding: 10px; font-size: .75rem; }
@@ -188,6 +197,20 @@ p { color: var(--muted); line-height: 1.75; }
 .steps-list li { display: flex; gap: 14px; }
 .steps-list li > span { flex: 0 0 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: white; font-size: .7rem; }
 .steps-list p { margin: 3px 0 0; color: var(--ink); font-size: .85rem; }
+.nutrition-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin: 14px 0; }
+.nutrition-summary > span { min-width: 0; padding: 10px; border-radius: 10px; background: var(--green-soft); }
+.nutrition-summary small, .nutrition-summary strong { display: block; }
+.nutrition-summary small { color: #647665; font-size: .6rem; }
+.nutrition-summary strong { margin-top: 3px; color: #354b39; font-size: .74rem; }
+.nutrition-summary-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 12px 0 0; }
+.nutrition-summary-compact > span { padding: 7px 9px; }
+.nutrition-density { display: flex; justify-content: space-between; gap: 16px; margin: 12px 0; padding: 12px 14px; border-radius: 10px; background: var(--green-soft); color: #405542; font-size: .75rem; }
+.nutrition-table-wrap { overflow-x: auto; margin-top: 14px; }
+.nutrition-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: .7rem; }
+.nutrition-table th, .nutrition-table td { padding: 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.nutrition-table th:first-child, .nutrition-table td:first-child { text-align: left; }
+.nutrition-table td small { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: .58rem; }
+.nutrition-total-row { background: #f4eee5; font-weight: 800; }
 
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; }
 .recommend-layout { display: grid; grid-template-columns: minmax(300px, .7fr) minmax(420px, 1.3fr); gap: 28px; align-items: start; }
@@ -245,6 +268,16 @@ p { color: var(--muted); line-height: 1.75; }
 .privacy-note strong { color: #405542; font-size: .75rem; }
 .privacy-note p { margin: 4px 0 0; color: #627064; font-size: .72rem; line-height: 1.6; }
 .safe-list { padding-left: 18px; color: var(--muted); font-size: .78rem; line-height: 2; }
+.local-data-count { flex: none; border-radius: 999px; padding: 7px 10px; background: var(--green-soft); color: #405542; font-size: .68rem; font-weight: 800; }
+.nutrition-settings-panel > p { color: var(--muted); font-size: .76rem; }
+.nutrition-selector { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 18px 0 14px; }
+.nutrition-option { display: flex; align-items: center; gap: 9px; min-height: 56px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; background: white; }
+.nutrition-option.selected { border-color: #9eb09f; background: var(--green-soft); }
+.nutrition-option input { width: 17px; height: 17px; accent-color: var(--green); }
+.nutrition-option span, .nutrition-option strong, .nutrition-option small { display: block; }
+.nutrition-option strong { font-size: .72rem; }
+.nutrition-option small { margin-top: 2px; color: var(--muted); font-size: .58rem; }
+.settings-hint { padding: 10px 12px; border-radius: 9px; background: #f4eee5; line-height: 1.6; }
 .log-panel { padding: 26px; }
 .segmented { display: flex; background: #eee7dc; padding: 3px; border-radius: 999px; }
 .segmented button { border: 0; background: transparent; color: var(--muted); padding: 7px 12px; border-radius: 999px; font-size: .68rem; }
@@ -308,6 +341,11 @@ p { color: var(--muted); line-height: 1.75; }
   .form-section { padding: 18px; }
   .ingredient-row { grid-template-columns: 28px 1fr 1fr 34px; }
   .ingredient-row input:nth-of-type(3) { display: none; }
+  .nutrition-match-toolbar { align-items: flex-start; flex-direction: column; }
+  .ingredient-nutrition-row { grid-template-columns: 1fr 1fr; padding-left: 0; }
+  .ingredient-nutrition-row label:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .nutrition-match-status { justify-self: start; }
+  .nutrition-selector { grid-template-columns: 1fr 1fr; }
   .two-columns { grid-template-columns: 1fr; }
   .field-wide { grid-column: auto; }
   .ingredient-list { grid-template-columns: 1fr; }
