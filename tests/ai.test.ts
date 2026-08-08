@@ -76,6 +76,7 @@ test("accepts OpenAI-compatible text completion payload variants", async () => {
     { choices: [{ text: recipeJson }] },
     { choices: [{ message: { content: [{ type: "text", text: recipeJson }] } }] },
     { choices: [{ message: { content: [{ type: "output_text", text: recipeJson }] } }] },
+    { choices: [{ message: { content: { text: recipeJson } } }] },
   ];
   for (const variant of variants) {
     const originalFetch = globalThis.fetch;

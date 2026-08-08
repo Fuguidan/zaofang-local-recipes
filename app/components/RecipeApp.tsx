@@ -473,12 +473,16 @@ function RecipeEditor({
   const [customTag, setCustomTag] = useState("");
   const patch = <K extends keyof RecipeInput>(key: K, next: RecipeInput[K]) => onChange({ ...value, [key]: next });
 
-  async function generateDraft() {
+  async function generateDraft(mode: "image" | "text") {
     const hasName = Boolean(value.name.trim());
-    const aiImage = isAiSupportedImage(value.image) ? value.image : undefined;
+    const aiImage = mode === "image" && isAiSupportedImage(value.image) ? value.image : undefined;
     const source = aiImage ? "image" : "name";
-    if (!aiImage && !hasName) {
-      setParseNotice(value.image ? "该图片暂不能用于图片 AI，请填写菜名或换成 JPG/PNG/WebP。" : "请先上传图片或填写菜名，再点击智能生成。");
+    if (mode === "image" && !aiImage) {
+      setParseNotice(value.image ? "该图片暂不能用于图片 AI，请换成 JPG/PNG/WebP，或改用“仅文字生成”。" : "请先上传可用图片。");
+      return;
+    }
+    if (mode === "text" && !hasName) {
+      setParseNotice("仅文字生成需要先填写菜名。");
       return;
     }
     if (!settings.ai.enabled) {
@@ -575,7 +579,12 @@ function RecipeEditor({
             <label className="field"><span>原始说明</span><textarea rows={3} value={value.description} onChange={(event) => patch("description", event.target.value)} placeholder="例如：外婆做的红烧肉，偏甜口……" /></label>
             <div className="parse-panel">
               <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"}` : "尚未配置 API Key") : "设置中未开启"}</small></div>
-              {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消生成</button> : <button className="button-secondary" disabled={!value.image && !value.name.trim()} onClick={() => void generateDraft()}>{aiImage && !hasName ? "识别图片并填充" : "智能生成"}</button>}
+              {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消生成</button> : (
+                <div className="button-row ai-action-row">
+                  <button className="button-secondary" disabled={!hasName} onClick={() => void generateDraft("text")}>仅文字生成</button>
+                  <button className="button-primary" disabled={!aiImage} onClick={() => void generateDraft("image")}>{hasName ? "图片+文字识别" : "识别图片并填充"}</button>
+                </div>
+              )}
             </div>
             {parseNotice && <p className="inline-notice">{parseNotice}</p>}
           </section>

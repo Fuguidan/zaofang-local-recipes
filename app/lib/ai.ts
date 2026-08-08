@@ -67,7 +67,7 @@ const failureSuggestions: Record<AIFailure, string> = {
   cors_or_network: "浏览器无法连接模型接口。Web 端常见原因是 CORS 拦截、网络不可达或接口地址错误。",
   vision_not_supported: "接口可连接，但当前模型或服务不支持图片输入。请换支持视觉的模型，或只填写菜名生成。",
   bad_response_json: "接口返回的内容不是 JSON，请确认接口地址是 OpenAI-compatible Chat Completions。",
-  bad_model_payload: "接口返回格式不包含可识别的模型文本内容，请确认接口兼容 Chat Completions 或 Responses 文本输出。",
+  bad_model_payload: "接口返回格式不包含可识别的模型文本内容，请确认接口兼容 Chat Completions/Responses；图片模型失败时可改用“仅文字生成”。",
   bad_recipe_json: "模型返回了内容，但不是可解析的菜谱 JSON。请换模型或调整模型输出格式。",
 };
 
@@ -240,7 +240,7 @@ export async function generateRecipeDraft({
     throw new AIRequestError("bad_response_json", "接口返回的内容不是 JSON", response.status, error);
   }
   const content = stripJsonFence(extractModelContent(body));
-  if (!content) throw new AIRequestError("bad_model_payload", "模型未返回可识别的文本内容", response.status);
+  if (!content) throw new AIRequestError("bad_model_payload", "模型未返回可识别的文本内容（字段：" + summarizePayloadShape(body) + "）", response.status);
   try {
     return normalizeDraft(JSON.parse(content) as Partial<RecipeInput>);
   } catch (error) {
@@ -273,6 +273,7 @@ function extractModelContent(body: unknown): string {
 function extractContentValue(value: unknown): string {
   const direct = firstString(value);
   if (direct) return direct;
+  if (isRecord(value)) return firstString(value.text) || firstString(value.content) || firstString(value.value);
   if (!Array.isArray(value)) return "";
   return value
     .map((part) => {
@@ -283,6 +284,11 @@ function extractContentValue(value: unknown): string {
     .filter(Boolean)
     .join("\n")
     .trim();
+}
+
+function summarizePayloadShape(body: unknown) {
+  if (!isRecord(body)) return "非对象";
+  return Object.keys(body).slice(0, 8).join(",") || "空对象";
 }
 
 function firstString(value: unknown) {
