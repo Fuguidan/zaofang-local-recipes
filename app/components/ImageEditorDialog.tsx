@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { calculateImageTransform, clampImageOffset, normalizeRotation } from "../lib/image-editor";
+import { calculateImageTransform, clampImageOffset, MAX_IMAGE_ZOOM, MIN_IMAGE_ZOOM, normalizeRotation } from "../lib/image-editor";
 
 const OUTPUT_WIDTH = 1200;
 const OUTPUT_HEIGHT = 900;
@@ -158,7 +158,7 @@ export function ImageEditorDialog({
           <small>拖动图片调整裁剪位置，浅色边框内为最终保存范围</small>
         </div>
         <div className="image-editor-controls">
-          <label><span>缩放</span><input type="range" min="1" max="3" step="0.01" value={zoom} onChange={(event) => {
+          <label><span>缩放 {Math.round(zoom * 100)}%</span><input type="range" min={MIN_IMAGE_ZOOM} max={MAX_IMAGE_ZOOM} step="0.01" value={zoom} onChange={(event) => {
             const next = Number(event.target.value);
             setZoom(next);
             setOffset((current) => constrainedOffset(current, next, rotation));

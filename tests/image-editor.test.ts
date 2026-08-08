@@ -54,3 +54,19 @@ test("zoom increases the output scale and available pan range", () => {
   assert.equal(transform.centerX, 900);
   assert.equal(transform.centerY, 150);
 });
+
+test("zoom below one shrinks the image inside the saved canvas", () => {
+  const transform = calculateImageTransform({
+    imageWidth: 1200,
+    imageHeight: 900,
+    canvasWidth: 1200,
+    canvasHeight: 900,
+    rotation: 0,
+    zoom: 0.5,
+    offsetX: 300,
+    offsetY: -300,
+  });
+  assert.equal(transform.scale, 0.5);
+  assert.equal(transform.centerX, 600);
+  assert.equal(transform.centerY, 450);
+});

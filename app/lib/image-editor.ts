@@ -5,6 +5,13 @@ export interface ImageTransform {
   rotationRadians: number;
 }
 
+export const MIN_IMAGE_ZOOM = 0.5;
+export const MAX_IMAGE_ZOOM = 3;
+
+export function normalizeImageZoom(zoom: number) {
+  return Math.max(MIN_IMAGE_ZOOM, Math.min(MAX_IMAGE_ZOOM, zoom));
+}
+
 export function normalizeRotation(rotation: number) {
   return ((rotation % 360) + 360) % 360;
 }
@@ -37,7 +44,7 @@ export function clampImageOffset({
 }) {
   const rotated = rotatedImageSize(imageWidth, imageHeight, rotation);
   const coverScale = Math.max(canvasWidth / rotated.width, canvasHeight / rotated.height);
-  const scale = coverScale * Math.max(1, zoom);
+  const scale = coverScale * normalizeImageZoom(zoom);
   const maxX = Math.max(0, (rotated.width * scale - canvasWidth) / 2);
   const maxY = Math.max(0, (rotated.height * scale - canvasHeight) / 2);
   return {
@@ -80,7 +87,7 @@ export function calculateImageTransform({
   return {
     centerX: canvasWidth / 2 + clamped.x,
     centerY: canvasHeight / 2 + clamped.y,
-    scale: Math.max(canvasWidth / rotated.width, canvasHeight / rotated.height) * Math.max(1, zoom),
+    scale: Math.max(canvasWidth / rotated.width, canvasHeight / rotated.height) * normalizeImageZoom(zoom),
     rotationRadians: normalized * Math.PI / 180,
   };
 }
