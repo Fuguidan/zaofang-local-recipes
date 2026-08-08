@@ -465,6 +465,8 @@ function RecipeEditor({
   onError: (error: AppError) => void;
 }) {
   const value = editor.value;
+  const hasName = Boolean(value.name.trim());
+  const aiImage = isAiSupportedImage(value.image) ? value.image : undefined;
   const [parsing, setParsing] = useState(false);
   const [parseNotice, setParseNotice] = useState("");
   const abortRef = useRef<AbortController | null>(null);
@@ -491,7 +493,9 @@ function RecipeEditor({
     const started = performance.now();
     abortRef.current = new AbortController();
     setParsing(true);
-    setParseNotice(aiImage ? "仅发送当前图片和本次文字，正在等待模型返回…" : "仅发送本次菜名和补充文字，正在等待模型返回…");
+    setParseNotice(aiImage
+      ? (hasName || value.description.trim() ? "仅发送当前图片和已填写文字，正在识别…" : "仅发送当前图片，正在识别菜名、食材和制作步骤…")
+      : "仅发送本次菜名和补充文字，正在等待模型返回…");
     try {
       const parsed = await generateRecipeDraft({
         image: aiImage,
@@ -507,7 +511,7 @@ function RecipeEditor({
         imageName: value.imageName,
         ingredients: (parsed.ingredients || value.ingredients).map((item) => ({ ...item, id: item.id || crypto.randomUUID() })),
       });
-      setParseNotice("解析完成，请检查并修改结果后再保存。");
+      setParseNotice("识别完成，内容已自动填入；确认无误后点击“保存到本机”。");
       await logger.info("ai", "recipe_generate_success", operationId, { result: "success", stage: source, durationMs: Math.round(performance.now() - started) });
     } catch (caught) {
       const error = toAppError(caught, "NETWORK");
@@ -571,7 +575,7 @@ function RecipeEditor({
             <label className="field"><span>原始说明</span><textarea rows={3} value={value.description} onChange={(event) => patch("description", event.target.value)} placeholder="例如：外婆做的红烧肉，偏甜口……" /></label>
             <div className="parse-panel">
               <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"}` : "尚未配置 API Key") : "设置中未开启"}</small></div>
-              {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消生成</button> : <button className="button-secondary" disabled={!value.image && !value.name.trim()} onClick={() => void generateDraft()}>智能生成</button>}
+              {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消生成</button> : <button className="button-secondary" disabled={!value.image && !value.name.trim()} onClick={() => void generateDraft()}>{aiImage && !hasName ? "识别图片并填充" : "智能生成"}</button>}
             </div>
             {parseNotice && <p className="inline-notice">{parseNotice}</p>}
           </section>

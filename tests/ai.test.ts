@@ -199,6 +199,30 @@ test("generates recipe draft from image and text", async () => {
   }
 });
 
+test("generates recipe draft from image only and sends image_url", async () => {
+  const bodies: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify(aiResponse), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const draft = await generateRecipeDraft({
+      image: new Blob(["image-bytes"], { type: "image/jpeg" }),
+      config: enabledConfig,
+    });
+    const body = bodies[0] as { messages: Array<{ content: Array<{ type: string; text?: string; image_url?: { url: string } }> }> };
+    assert.equal(draft.name, "番茄炒蛋");
+    assert.equal(Array.isArray(body.messages[1].content), true);
+    assert.equal(body.messages[1].content[0].type, "text");
+    assert.match(body.messages[1].content[0].text || "", /结合图片/);
+    assert.equal(body.messages[1].content[1].type, "image_url");
+    assert.match(body.messages[1].content[1].image_url?.url || "", /^data:image\/jpeg;base64,/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("does not send unsupported HEIC image to AI and falls back to dish name", async () => {
   const bodies: unknown[] = [];
   const originalFetch = globalThis.fetch;
