@@ -208,3 +208,11 @@
 - 测试：类型检查、37 项领域测试、Android Web 构建、Capacitor 同步和 Gradle `assembleDebug` 全部通过。
 - 产物：重新生成 `artifacts/zaofang-android-debug.apk`。
 - 已知问题：当前开发机未连接 Android 真机，无法读取该设备的 DNS/TLS 原生日志；若新 APK 仍请求失败，请把新的“设备网络”摘要和错误日志一并提供。
+
+## 2026-08-08 · Web AI 配置兼容与成功链路验证
+
+- 目标：修复 Web 端 DashScope 配置复制后请求失败或误报 CORS 的问题。
+- 修改：请求前自动 trim 接口地址、模型名和 API Key；将常见的 `/compatible-mode/v1` 或 `/v1` 基地址补全为 `/chat/completions`；针对 DashScope 中常见的错误模型名 `qwen3.7-flash` 自动纠正为支持多模态的 `qwen3.6-flash`；设置页保存时同步保存规范化配置。
+- 验证：Vite 同源代理访问 DashScope 测试接口成功收到上游 `401`，证明代理和网络链路正常；使用本地模拟 OpenAI-compatible 模型完成“图片 → image_url → 菜谱 JSON → 编辑表单草稿”端到端生成，输出红烧肉、五花肉和 2 个步骤。
+- 测试：类型检查、38 项测试和 Web 生产构建全部通过。
+- 使用：设置页填写 `https://dashscope.aliyuncs.com/compatible-mode/v1` 也可以，保存后会自动补全完整接口；模型建议填写 `qwen3.6-flash` 或其他已开通的视觉模型。

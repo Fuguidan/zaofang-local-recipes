@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AIRequestError, generateRecipeDraft, LOCAL_AI_PROXY_PATH, resolveAIRequestTarget } from "../app/lib/ai.ts";
+import { AIRequestError, generateRecipeDraft, LOCAL_AI_PROXY_PATH, normalizeAIConfig, normalizeAIEndpoint, resolveAIRequestTarget } from "../app/lib/ai.ts";
 import { isHeicImage } from "../app/lib/images.ts";
 import type { AIProviderConfig } from "../app/lib/types.ts";
 
@@ -114,6 +114,15 @@ test("routes localhost web AI requests through the local dev proxy", async () =>
   });
   assert.match(target, new RegExp(`^${LOCAL_AI_PROXY_PATH}\\?target=`));
   assert.equal(new URL(target, "http://localhost:5173").searchParams.get("target"), "https://api.example.test/v1/chat/completions");
+});
+
+test("normalizes copied provider endpoint, model, and API key values", () => {
+  assert.equal(normalizeAIEndpoint(" https://dashscope.aliyuncs.com/compatible-mode/v1/ "), "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
+  const config = normalizeAIConfig({ ...enabledConfig, endpoint: " https://example.test/v1/ ", model: " vision-model ", apiKey: " sk-test-secret " });
+  assert.equal(config.endpoint, "https://example.test/v1/chat/completions");
+  assert.equal(config.model, "vision-model");
+  assert.equal(config.apiKey, "sk-test-secret");
+  assert.equal(normalizeAIConfig({ ...enabledConfig, endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen3.7-flash" }).model, "qwen3.6-flash");
 });
 
 test("uses the same-origin proxy for hosted web pages too", () => {

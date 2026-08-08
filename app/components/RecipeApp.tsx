@@ -19,7 +19,7 @@ import { AppError, toAppError } from "../lib/errors";
 import { logger } from "../lib/logger";
 import { recommendRecipes } from "../lib/recommendation";
 import { createBackup, parseBackup } from "../lib/backup";
-import { AIRequestError, generateRecipeDraft, resolveAIRequestTarget, testAIVisionCapability } from "../lib/ai";
+import { AIRequestError, generateRecipeDraft, normalizeAIConfig, resolveAIRequestTarget, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
 
@@ -972,14 +972,15 @@ function SettingsView({
 
   async function testConnection() {
     if (!ensureAiConfig()) return;
+    const aiConfig = normalizeAIConfig(draft.ai);
     const operationId = crypto.randomUUID();
     setTesting(true);
     setTestNotice("正在测试文本连接…");
     try {
-      const response = await fetch(resolveAIRequestTarget(draft.ai.endpoint), {
+      const response = await fetch(resolveAIRequestTarget(aiConfig.endpoint), {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${draft.ai.apiKey}` },
-        body: JSON.stringify({ model: draft.ai.model, max_tokens: 1, messages: [{ role: "user", content: "回复OK" }] }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${aiConfig.apiKey}` },
+        body: JSON.stringify({ model: aiConfig.model, max_tokens: 1, messages: [{ role: "user", content: "回复OK" }] }),
       });
       if (!response.ok) throw new AppError("NETWORK", `连接失败：${response.status}`);
       await logger.info("ai", "connection_test_success", operationId, { result: "success", message: `host=${endpointHost(draft.ai.endpoint)};model=${draft.ai.model};image=false;status=${response.status}` });
@@ -999,7 +1000,7 @@ function SettingsView({
     setTesting(true);
     setTestNotice("正在测试图片能力…");
     try {
-      await testAIVisionCapability({ ...draft.ai, enabled: true });
+      await testAIVisionCapability({ ...normalizeAIConfig(draft.ai), enabled: true });
       setTestNotice("图片能力测试通过。当前模型可接收图片输入。");
       await logger.info("ai", "vision_test_success", operationId, { result: "success", message: `host=${endpointHost(draft.ai.endpoint)};model=${draft.ai.model};image=true` });
     } catch (caught) {
@@ -1031,7 +1032,7 @@ function SettingsView({
           <label className="field"><span>模型名</span><input value={draft.ai.model} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, model: event.target.value } })} placeholder="填写支持图片输入的模型" /></label>
           <label className="field"><span>API Key</span><input type="password" autoComplete="off" value={draft.ai.apiKey} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, apiKey: event.target.value } })} placeholder="仅保存在当前浏览器" /></label>
           {testNotice && <p className="inline-notice">{testNotice}</p>}
-          <div className="button-row"><button className="button-secondary" disabled={testing} onClick={() => void testConnection()}>{testing ? "正在测试…" : "测试文本连接"}</button><button className="button-secondary" disabled={testing} onClick={() => void testVision()}>测试图片能力</button><button className="button-primary" onClick={() => void onSettings(draft)}>保存设置</button></div>
+          <div className="button-row"><button className="button-secondary" disabled={testing} onClick={() => void testConnection()}>{testing ? "正在测试…" : "测试文本连接"}</button><button className="button-secondary" disabled={testing} onClick={() => void testVision()}>测试图片能力</button><button className="button-primary" onClick={() => void onSettings({ ...draft, ai: normalizeAIConfig(draft.ai) })}>保存设置</button></div>
         </section>
         <section className="panel settings-panel">
           <div className="panel-heading"><div><span className="eyebrow">只在本机</span><h2>调试模式</h2></div><label className="switch"><input type="checkbox" checked={draft.debugMode} onChange={(event) => { const next = { ...draft, debugMode: event.target.checked }; setDraft(next); void onSettings(next); }} /><span /></label></div>

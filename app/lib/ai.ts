@@ -22,6 +22,45 @@ const DIFFICULTIES = new Set(["简单", "适中", "进阶"]);
 const VISION_ERROR_PATTERN = /image|vision|visual|modal|multimodal|image_url|content type|图片|视觉|多模态/i;
 export const LOCAL_AI_PROXY_PATH = "/__local_ai_proxy/chat/completions";
 
+/** Normalize values copied from provider dashboards before any request is made. */
+export function normalizeAIConfig(config: AIProviderConfig): AIProviderConfig {
+  const endpoint = normalizeAIEndpoint(config.endpoint);
+  const model = normalizeAIModel(endpoint, config.model);
+  return {
+    ...config,
+    endpoint,
+    model,
+    apiKey: config.apiKey.trim(),
+  };
+}
+
+function normalizeAIModel(endpoint: string, model: string) {
+  const trimmed = model.trim();
+  // DashScope currently exposes the multimodal flash model as qwen3.6-flash;
+  // qwen3.7-flash is a common copied-but-invalid model name.
+  if (/dashscope(?:-[a-z]+)?\.aliyuncs\.com$/i.test(hostnameOf(endpoint)) && trimmed.toLowerCase() === "qwen3.7-flash") {
+    return "qwen3.6-flash";
+  }
+  return trimmed;
+}
+
+function hostnameOf(endpoint: string) {
+  try { return new URL(endpoint).hostname; } catch { return ""; }
+}
+
+export function normalizeAIEndpoint(endpoint: string) {
+  const value = endpoint.trim();
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    if (/\/(?:compatible-mode\/)?v1$/i.test(url.pathname)) url.pathname += "/chat/completions";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return value;
+  }
+}
+
 const failureSuggestions: Record<AIFailure, string> = {
   auth_failed: "鉴权失败，请检查 API Key 是否正确，或确认接口地址属于同一家服务。",
   rate_limited: "请求被限流或额度不足，请稍后重试，或检查模型服务额度。",
@@ -129,7 +168,8 @@ export async function generateRecipeDraft({
   config: AIProviderConfig;
   signal?: AbortSignal;
 }): Promise<Partial<RecipeInput>> {
-  if (!config.enabled || !config.apiKey || !config.endpoint || !config.model) {
+  const normalizedConfig = normalizeAIConfig(config);
+  if (!normalizedConfig.enabled || !normalizedConfig.apiKey || !normalizedConfig.endpoint || !normalizedConfig.model) {
     throw new AppError("NETWORK", "未配置或未启用 AI 生成");
   }
   const aiImage = isAiSupportedImage(image) ? image : undefined;
@@ -143,7 +183,7 @@ export async function generateRecipeDraft({
     aiImage ? "请结合图片生成菜谱草稿。" : "请根据菜品名称生成菜谱草稿。",
   ].filter(Boolean).join("\n");
   const requestBody = {
-    model: config.model,
+    model: normalizedConfig.model,
     temperature: 0.1,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
@@ -163,9 +203,9 @@ export async function generateRecipeDraft({
     if (isCapacitorNativeApp()) {
       if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
       const nativeResponse = await CapacitorHttp.request({
-        url: config.endpoint,
+        url: normalizedConfig.endpoint,
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${normalizedConfig.apiKey}` },
         // Send a JSON string explicitly. This avoids Android bridge differences
         // when nested image_url arrays are marshalled from JavaScript objects.
         data: JSON.stringify(requestBody),
@@ -178,9 +218,9 @@ export async function generateRecipeDraft({
         { status: nativeResponse.status, headers: nativeResponse.headers },
       );
     } else {
-      response = await fetch(resolveAIRequestTarget(config.endpoint), {
+      response = await fetch(resolveAIRequestTarget(normalizedConfig.endpoint), {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${normalizedConfig.apiKey}` },
         body: JSON.stringify(requestBody),
         signal,
       });
