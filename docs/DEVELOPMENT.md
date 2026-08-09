@@ -292,3 +292,14 @@
 - 隐私：本地食品匹配仍完全离线；只有用户主动点击智能生成时才向已配置模型发送当前图片/文字和估算人数。
 - 产物：重新生成 `artifacts/zaofang-android-debug.apk`。
 - 下一步：在真机验证六项标签换行和系统字号放大场景。
+
+## 2026-08-09 · Android 顶部状态栏安全区修复
+
+- 目标：修复 APK 中“灶房 / 我的菜谱”顶部导航进入手机状态栏、遮挡系统时间和图标的问题。
+- 原因：页面只读取浏览器标准的 `env(safe-area-inset-top)`；部分 Android 15 和厂商 WebView 会由 Capacitor 注入 `--safe-area-inset-top`，但标准 `env()` 仍返回 0，导致页面忽略真实状态栏高度。
+- 修改：Capacitor 明确启用 SystemBars CSS 安全区处理；页面统一取浏览器 `env()` 与 Capacitor 原生安全区变量的较大值。顶部导航、抽屉、图片编辑器、错误提示和底部操作区共用同一安全区变量，避免重复留白。
+- TDD：先增加 Android 安全区来源测试并确认旧样式失败，再完成配置与样式；模拟 390px 手机和 32px 状态栏后，导航高度由 70px 增至 102px，品牌栏整体下移 32px，页面无横向溢出。
+- 兼容：新 WebView 使用 Capacitor 注入值，普通浏览器和 iPhone 使用 `env()`，旧 Android WebView 继续使用 Capacitor 原生容器避让。
+- 验证：类型检查、54 项自动测试、Web 生产构建、Capacitor 同步和 Android `assembleDebug` 全部通过；生成配置已确认包含 `SystemBars.insetsHandling = css`。
+- 产物：重新生成 `artifacts/zaofang-android-debug.apk`。
+- 下一步：在发生问题的真机覆盖安装，确认顶部系统时间、信号与应用导航之间保留完整安全距离。

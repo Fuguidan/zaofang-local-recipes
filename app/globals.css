@@ -15,6 +15,9 @@
   --shadow: 0 18px 55px rgba(63, 48, 35, 0.1);
   --serif: "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
   --sans: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  /* Capacitor injects --safe-area-inset-* on Android WebView; browsers expose env(). */
+  --app-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --app-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
 }
 
 * { box-sizing: border-box; }
@@ -306,7 +309,7 @@ p { color: var(--muted); line-height: 1.75; }
 .danger-symbol { width: 54px; height: 54px; display: grid; place-items: center; margin: 0 auto 18px; border-radius: 50%; background: #f6ded9; color: var(--danger); font-weight: 900; font-size: 1.4rem; }
 .import-preview { text-align: left; }
 .import-preview .button-row { justify-content: flex-end; }
-.toast { position: fixed; z-index: 80; right: 24px; top: calc(24px + env(safe-area-inset-top, 0px)); width: min(420px, calc(100vw - 48px)); display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 14px; box-shadow: var(--shadow); animation: toastIn .2s ease both; }
+.toast { position: fixed; z-index: 80; right: 24px; top: calc(24px + var(--app-safe-top)); width: min(420px, calc(100vw - 48px)); display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 14px; box-shadow: var(--shadow); animation: toastIn .2s ease both; }
 @keyframes toastIn { from { transform: translateY(12px); opacity: 0; } }
 .toast strong, .toast small { display: block; }
 .toast small { margin-top: 4px; opacity: .72; font-size: .66rem; }
@@ -332,7 +335,7 @@ p { color: var(--muted); line-height: 1.75; }
 @media (max-width: 760px) {
   .app-shell { display: block; }
   .sidebar { display: none; }
-  .mobile-header { min-height: calc(70px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(10px + env(safe-area-inset-top, 0px)) 18px 10px; background: #242923; color: white; position: sticky; top: 0; z-index: 20; }
+  .mobile-header { min-height: calc(70px + var(--app-safe-top)); display: flex; align-items: center; justify-content: space-between; padding: calc(10px + var(--app-safe-top)) 18px 10px; background: #242923; color: white; position: sticky; top: 0; z-index: 20; }
   .mobile-header .brand-mark { width: 36px; height: 36px; font-size: 1rem; }
   .mobile-header select { background: rgba(255,255,255,.09); color: white; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; padding: 8px 12px; }
   .page-section { padding: 36px 18px 70px; }
@@ -341,8 +344,8 @@ p { color: var(--muted); line-height: 1.75; }
   .toolbar { align-items: stretch; flex-direction: column; }
   .recipe-grid { grid-template-columns: 1fr; }
   .drawer { width: 100vw; }
-  .drawer-header { padding: calc(18px + env(safe-area-inset-top, 0px)) 18px 18px; }
-  .drawer-footer { padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .drawer-header { padding: calc(18px + var(--app-safe-top)) 18px 18px; }
+  .drawer-footer { padding: 18px 18px calc(18px + var(--app-safe-bottom)); }
   .editor-content, .detail-content { padding: 18px; }
   .form-section { padding: 18px; }
   .ingredient-row { grid-template-columns: 28px 1fr 1fr 34px; }
@@ -369,10 +372,10 @@ p { color: var(--muted); line-height: 1.75; }
   .ai-action-row { width: 100%; justify-content: stretch; }
   .ai-action-row button { flex: 1; padding-inline: 12px; }
   .image-edit-actions { align-items: stretch; flex-direction: column; }
-  .image-editor-backdrop { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+  .image-editor-backdrop { padding: var(--app-safe-top) 0 var(--app-safe-bottom); }
   .image-editor-dialog { width: 100%; max-height: 100dvh; border-radius: 0; }
-  .image-editor-dialog > header { padding-top: calc(18px + env(safe-area-inset-top, 0px)); }
-  .image-editor-dialog > footer { padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .image-editor-dialog > header { padding-top: calc(18px + var(--app-safe-top)); }
+  .image-editor-dialog > footer { padding-bottom: calc(18px + var(--app-safe-bottom)); }
   .image-editor-stage, .image-editor-controls { padding-inline: 16px; }
 }
 
