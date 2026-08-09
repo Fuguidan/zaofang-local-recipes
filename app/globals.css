@@ -202,8 +202,11 @@ p { color: var(--muted); line-height: 1.75; }
 .nutrition-summary small, .nutrition-summary strong { display: block; }
 .nutrition-summary small { color: #647665; font-size: .6rem; }
 .nutrition-summary strong { margin-top: 3px; color: #354b39; font-size: .74rem; }
-.nutrition-summary-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 12px 0 0; }
-.nutrition-summary-compact > span { padding: 7px 9px; }
+.nutrition-summary-compact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; }
+.nutrition-summary-compact > span { display: inline-flex; flex: 0 1 auto; align-items: baseline; gap: 5px; min-width: 0; padding: 6px 10px; border-radius: 999px; }
+.nutrition-summary-compact small, .nutrition-summary-compact strong { display: inline; margin: 0; white-space: nowrap; }
+.nutrition-summary-compact small { font-size: .57rem; }
+.nutrition-summary-compact strong { font-size: .66rem; }
 .nutrition-density { display: flex; justify-content: space-between; gap: 16px; margin: 12px 0; padding: 12px 14px; border-radius: 10px; background: var(--green-soft); color: #405542; font-size: .75rem; }
 .nutrition-table-wrap { overflow-x: auto; margin-top: 14px; }
 .nutrition-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: .7rem; }
@@ -278,6 +281,9 @@ p { color: var(--muted); line-height: 1.75; }
 .nutrition-option strong { font-size: .72rem; }
 .nutrition-option small { margin-top: 2px; color: var(--muted); font-size: .58rem; }
 .settings-hint { padding: 10px 12px; border-radius: 9px; background: #f4eee5; line-height: 1.6; }
+.nutrition-people-field { margin: 4px 0 14px; }
+.nutrition-people-field input { max-width: 120px; }
+.nutrition-people-field small { max-width: 520px; color: var(--muted); font-size: .65rem; line-height: 1.55; }
 .log-panel { padding: 26px; }
 .segmented { display: flex; background: #eee7dc; padding: 3px; border-radius: 999px; }
 .segmented button { border: 0; background: transparent; color: var(--muted); padding: 7px 12px; border-radius: 999px; font-size: .68rem; }
@@ -346,6 +352,8 @@ p { color: var(--muted); line-height: 1.75; }
   .ingredient-nutrition-row label:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
   .nutrition-match-status { justify-self: start; }
   .nutrition-selector { grid-template-columns: 1fr 1fr; }
+  .nutrition-summary-compact { gap: 5px; }
+  .nutrition-summary-compact > span { padding: 5px 8px; }
   .two-columns { grid-template-columns: 1fr; }
   .field-wide { grid-column: auto; }
   .ingredient-list { grid-template-columns: 1fr; }

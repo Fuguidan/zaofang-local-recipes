@@ -25,7 +25,7 @@ const foodById = new Map(foods.map((food) => [food.id, food]));
 
 const CHINESE_SEARCH_TERMS: Record<string, string[]> = {
   "鸡蛋": ["egg whole", "eggs grade a large egg whole"], "蛋白": ["egg white"], "蛋黄": ["egg yolk"],
-  "鸡胸": ["chicken breast skinless"], "鸡腿": ["chicken drumstick"], "鸡翅": ["chicken wing"], "鸡肉": ["chicken meat"],
+  "鸡胸肉": ["chicken breast skinless"], "鸡胸": ["chicken breast skinless"], "鸡腿": ["chicken drumstick"], "鸡翅": ["chicken wing"], "鸡肉": ["chicken meat"],
   "牛肉": ["beef raw lean"], "猪肉": ["pork raw lean"], "羊肉": ["lamb raw"], "培根": ["bacon cooked"],
   "三文鱼": ["salmon raw"], "金枪鱼": ["tuna raw", "tuna canned water"], "虾": ["shrimp cooked"], "鳕鱼": ["cod raw"],
   "豆腐": ["tofu raw firm"], "豆浆": ["soymilk"], "黄豆": ["soybeans mature seeds"], "黑豆": ["beans black mature seeds"],
@@ -81,6 +81,24 @@ export function searchFoods(query: string, limit = 12) {
 
 export function getFoodReference(id?: string) {
   return id ? foodById.get(id) : undefined;
+}
+
+function chineseAliasForFood(food: FoodReference) {
+  const name = food.name.toLowerCase();
+  for (const [alias, terms] of Object.entries(CHINESE_SEARCH_TERMS)) {
+    if (terms.some((term) => term.split(" ").filter(Boolean).every((word) => name.includes(word)))) return alias;
+  }
+  return "";
+}
+
+export function formatFoodDisplayLabel(food: FoodReference | undefined, query = "") {
+  if (!food) return "未匹配";
+  const queryAlias = Object.keys(CHINESE_SEARCH_TERMS)
+    .sort((a, b) => b.length - a.length)
+    .find((alias) => query.includes(alias));
+  const chinese = queryAlias || chineseAliasForFood(food) || (/[\u3400-\u9fff]/.test(query) ? query.trim().slice(0, 16) : "标准食材");
+  const english = food.name.length > 72 ? `${food.name.slice(0, 69)}…` : food.name;
+  return `${chinese} ｜ ${english}`;
 }
 
 export function parseIngredientGrams(amount: string, unit: string) {

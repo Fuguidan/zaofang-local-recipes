@@ -66,10 +66,13 @@ export async function parseBackup(file: File) {
     const visibleNutrients = Array.isArray(payload.settings?.nutrition?.visibleNutrients)
       ? payload.settings.nutrition.visibleNutrients.filter((key): key is NutrientKey => allowedNutrients.has(key as NutrientKey))
       : ["energyKcal", "proteinG", "carbohydrateG", "fatG"] satisfies NutrientKey[];
+    const estimatePeople = Number.isFinite(payload.settings?.nutrition?.estimatePeople) && Number(payload.settings.nutrition.estimatePeople) >= 1
+      ? Math.min(20, Math.round(Number(payload.settings.nutrition.estimatePeople)))
+      : 2;
     return {
       manifest,
       recipes,
-      settings: { debugMode: Boolean(payload.settings?.debugMode), nutrition: { visibleNutrients } },
+      settings: { debugMode: Boolean(payload.settings?.debugMode), nutrition: { visibleNutrients, estimatePeople } },
       history: payload.history || [],
     };
   } catch (error) {

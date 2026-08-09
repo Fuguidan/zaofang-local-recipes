@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateRecipeNutrition, LOCAL_NUTRITION_DATA_INFO, parseIngredientGrams, searchFoods, suggestIngredientNutrition } from "../app/lib/nutrition.ts";
+import { calculateRecipeNutrition, formatFoodDisplayLabel, LOCAL_NUTRITION_DATA_INFO, parseIngredientGrams, searchFoods, suggestIngredientNutrition } from "../app/lib/nutrition.ts";
 import type { Ingredient } from "../app/lib/types.ts";
 
 test("bundles a comprehensive local nutrition database", () => {
@@ -12,6 +12,14 @@ test("searches common Chinese ingredient aliases offline", () => {
   assert.match(searchFoods("鸡蛋", 1)[0]?.name || "", /egg/i);
   assert.match(searchFoods("鸡胸肉", 1)[0]?.name || "", /chicken.*breast/i);
   assert.match(searchFoods("西红柿", 1)[0]?.name || "", /tomato/i);
+});
+
+test("shows a readable Chinese and English label for matched standard foods", () => {
+  const chicken = searchFoods("鸡胸肉", 1)[0];
+  const label = formatFoodDisplayLabel(chicken, "鸡胸肉");
+  assert.match(label, /^鸡胸肉\s*｜\s*/);
+  assert.match(label, /Chicken/i);
+  assert.ok(label.length < 100);
 });
 
 test("converts supported ingredient units to grams", () => {

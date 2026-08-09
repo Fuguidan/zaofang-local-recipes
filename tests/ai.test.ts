@@ -71,6 +71,29 @@ test("generates recipe draft from dish name only", async () => {
   }
 });
 
+test("asks the model to estimate editable ingredient grams for the configured people count", async () => {
+  const bodies: unknown[] = [];
+  const responseWithGrams = structuredClone(aiResponse);
+  responseWithGrams.choices[0].message.content = JSON.stringify({
+    ...JSON.parse(recipeJson),
+    ingredients: [{ name: "番茄", amount: "2", unit: "个", grams: 320 }],
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify(responseWithGrams), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const draft = await generateRecipeDraft({ name: "番茄炒蛋", estimatePeople: 2, config: enabledConfig });
+    const body = bodies[0] as { messages: Array<{ content: unknown }> };
+    assert.match(String(body.messages[1].content), /2\s*人/);
+    assert.match(String(body.messages[1].content), /估算.*克数/);
+    assert.equal(draft.ingredients?.[0].grams, 320);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("generates recipe draft from description only", async () => {
   const bodies: unknown[] = [];
   const originalFetch = globalThis.fetch;

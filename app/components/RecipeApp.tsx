@@ -24,7 +24,7 @@ import { AIRequestError, generateRecipeDraft, normalizeAIConfig, resolveAIReques
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
 import { ImageEditorDialog } from "./ImageEditorDialog";
-import { calculateRecipeNutrition, formatNutrientValue, getFoodReference, LOCAL_NUTRITION_DATA_INFO, NUTRIENT_KEYS, NUTRIENT_META, searchFoods, suggestIngredientNutrition } from "../lib/nutrition";
+import { calculateRecipeNutrition, formatFoodDisplayLabel, formatNutrientValue, getFoodReference, LOCAL_NUTRITION_DATA_INFO, NUTRIENT_KEYS, NUTRIENT_META, searchFoods, suggestIngredientNutrition } from "../lib/nutrition";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
 type EditorMode = "create" | "edit";
@@ -152,7 +152,7 @@ export default function RecipeApp() {
   const [settings, setSettings] = useState<AppSettings>({
     debugMode: false,
     ai: { endpoint: "https://api.deepseek.com/chat/completions", model: "", apiKey: "", enabled: false },
-    nutrition: { visibleNutrients: ["energyKcal", "proteinG", "carbohydrateG", "fatG"] },
+    nutrition: { visibleNutrients: ["energyKcal", "proteinG", "carbohydrateG", "fatG"], estimatePeople: 2 },
   });
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -519,6 +519,7 @@ function RecipeEditor({
         image: aiImage,
         name: value.name,
         description: value.description,
+        estimatePeople: settings.nutrition.estimatePeople,
         config: settings.ai,
         signal: abortRef.current.signal,
       });
@@ -529,7 +530,7 @@ function RecipeEditor({
         imageName: value.imageName,
         ingredients: (parsed.ingredients || value.ingredients).map((item) => suggestIngredientNutrition({ ...item, id: item.id || crypto.randomUUID() })),
       });
-      setParseNotice("识别完成，内容已自动填入；确认无误后点击“保存到本机”。");
+      setParseNotice(`识别完成，已按 ${settings.nutrition.estimatePeople} 人用量估算食材克数；请修正确认后保存到本机。`);
       await logger.info("ai", "recipe_generate_success", operationId, { result: "success", stage: source, durationMs: Math.round(performance.now() - started) });
     } catch (caught) {
       const error = toAppError(caught, "NETWORK");
@@ -602,7 +603,7 @@ function RecipeEditor({
             )}
             <label className="field"><span>原始说明</span><textarea rows={3} value={value.description} onChange={(event) => patch("description", event.target.value)} placeholder="例如：外婆做的红烧肉，偏甜口……" /></label>
             <div className="parse-panel">
-              <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"}` : "尚未配置 API Key") : "设置中未开启"}</small></div>
+              <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"} · 按 ${settings.nutrition.estimatePeople} 人估算` : "尚未配置 API Key") : "设置中未开启"}</small></div>
               {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消生成</button> : (
                 <div className="button-row ai-action-row">
                   <button className="button-secondary" disabled={!hasTextInput} onClick={() => void generateDraft("text")}>仅文字生成</button>
@@ -635,7 +636,7 @@ function RecipeEditor({
           <section className="form-section">
             <div className="section-title"><span>03</span><div><h3>食材</h3><p>用量按原菜谱记录，不随推荐人数自动换算。</p></div></div>
             <div className="nutrition-match-toolbar">
-              <span>营养值按标准食材和可食重量在本机计算。</span>
+              <span>输入中文后会通过本地别名匹配 USDA 标准食品；中英文结果需要你确认。</span>
               <button className="button-secondary" onClick={() => patch("ingredients", value.ingredients.map(suggestIngredientNutrition))}>自动匹配全部</button>
             </div>
             <div className="dynamic-list">
@@ -665,7 +666,7 @@ function RecipeEditor({
                       <label><span>标准食材</span><select aria-label={`食材${index + 1}标准食材`} value={ingredient.foodId || ""} onChange={(event) => {
                         const food = getFoodReference(event.target.value);
                         const next = [...value.ingredients]; next[index] = { ...ingredient, foodId: food?.id, foodName: food?.name, nutritionMatch: food ? "confirmed" : "unmatched" }; patch("ingredients", next);
-                      }}><option value="">未匹配</option>{options.map((food) => <option key={food.id} value={food.id}>{food.name}</option>)}</select></label>
+                      }}><option value="">未匹配</option>{options.map((food) => <option key={food.id} value={food.id}>{formatFoodDisplayLabel(food, ingredient.name)}</option>)}</select></label>
                       <span className={`nutrition-match-status ${ingredient.foodId && ingredient.grams ? "ready" : "missing"}`}>{ingredient.foodId ? (ingredient.grams ? "可计算" : "缺少克数") : "未匹配"}</span>
                     </div>
                   </div>
@@ -770,7 +771,7 @@ function RecipeNutritionDetail({ recipe, visibleNutrients }: { recipe: Recipe; v
         <div className="nutrition-density"><span>蛋白质密度</span><strong>{nutrition.proteinDensity.toFixed(1)} g / 100 kcal</strong></div>
         {!nutrition.complete && <p className="inline-notice">已计算 {nutrition.calculatedCount}/{nutrition.ingredientCount} 项食材；缺少克数或标准食材的部分未计入，结果可能偏低。</p>}
         <div className="nutrition-table-wrap"><table className="nutrition-table"><thead><tr><th>食材</th><th>重量</th>{visibleNutrients.map((key) => <th key={key}>{NUTRIENT_META[key].label}</th>)}</tr></thead><tbody>
-          {nutrition.breakdown.filter((item) => item.ingredient.name.trim()).map((item) => <tr key={item.ingredient.id}><td>{item.ingredient.name}<small>{item.food?.name || "未匹配"}</small></td><td>{item.grams ? `${item.grams}g` : "—"}</td>{visibleNutrients.map((key) => <td key={key}>{item.nutrients ? formatNutrientValue(key, item.nutrients[key]) : "—"}</td>)}</tr>)}
+          {nutrition.breakdown.filter((item) => item.ingredient.name.trim()).map((item) => <tr key={item.ingredient.id}><td>{item.ingredient.name}<small>{formatFoodDisplayLabel(item.food, item.ingredient.name)}</small></td><td>{item.grams ? `${item.grams}g` : "—"}</td>{visibleNutrients.map((key) => <td key={key}>{item.nutrients ? formatNutrientValue(key, item.nutrients[key]) : "—"}</td>)}</tr>)}
           <tr className="nutrition-total-row"><td>全菜总计</td><td>—</td>{visibleNutrients.map((key) => <td key={key}>{formatNutrientValue(key, nutrition.totals[key])}</td>)}</tr>
         </tbody></table></div>
       </> : <p className="inline-notice">尚未计算。编辑菜谱，为食材选择标准食材并填写可食重量。</p>}
@@ -1152,7 +1153,7 @@ function SettingsView({
                       const visibleNutrients = event.target.checked
                         ? NUTRIENT_KEYS.filter((item) => item === key || draft.nutrition.visibleNutrients.includes(item))
                         : draft.nutrition.visibleNutrients.filter((item) => item !== key);
-                      setDraft({ ...draft, nutrition: { visibleNutrients } });
+                      setDraft({ ...draft, nutrition: { ...draft.nutrition, visibleNutrients } });
                     }}
                   />
                   <span><strong>{NUTRIENT_META[key].label}</strong><small>{NUTRIENT_META[key].unit}</small></span>
@@ -1160,6 +1161,21 @@ function SettingsView({
               );
             })}
           </div>
+          <label className="field nutrition-people-field">
+            <span>AI 食材重量估算人数</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              inputMode="numeric"
+              value={draft.nutrition.estimatePeople}
+              onChange={(event) => setDraft({
+                ...draft,
+                nutrition: { ...draft.nutrition, estimatePeople: Math.max(1, Math.min(20, Math.round(Number(event.target.value) || 2))) },
+              })}
+            />
+            <small>默认 2 人。智能生成会据此估算每项食材克数；图片无法测出真实重量，请在保存前修正。</small>
+          </label>
           <p className="settings-hint">营养值按每项食材的克数和匹配的本地标准食品计算。数据版本：{LOCAL_NUTRITION_DATA_INFO.version}。</p>
           <div className="button-row"><button className="button-primary" onClick={() => void onSettings(draft)}>保存营养显示</button></div>
         </section>

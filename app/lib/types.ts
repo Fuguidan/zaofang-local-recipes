@@ -28,6 +28,7 @@ export interface NutrientValues {
 
 export interface NutritionSettings {
   visibleNutrients: NutrientKey[];
+  estimatePeople: number;
 }
 
 export interface Recipe {

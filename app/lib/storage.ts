@@ -90,7 +90,7 @@ const defaultSettings: AppSettings = {
     apiKey: "",
     enabled: envValue("VITE_AI_ENABLED") === "true",
   },
-  nutrition: { visibleNutrients: ["energyKcal", "proteinG", "carbohydrateG", "fatG"] },
+  nutrition: { visibleNutrients: ["energyKcal", "proteinG", "carbohydrateG", "fatG"], estimatePeople: 2 },
 };
 
 function envValue(key: string) {
@@ -111,6 +111,9 @@ export const settingsStore = {
           visibleNutrients: Array.isArray(saved.nutrition?.visibleNutrients)
             ? saved.nutrition.visibleNutrients
             : defaultSettings.nutrition.visibleNutrients,
+          estimatePeople: Number.isFinite(saved.nutrition?.estimatePeople) && Number(saved.nutrition?.estimatePeople) >= 1
+            ? Math.min(20, Math.round(Number(saved.nutrition?.estimatePeople)))
+            : defaultSettings.nutrition.estimatePeople,
         },
       };
     }),

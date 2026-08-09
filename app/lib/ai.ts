@@ -171,12 +171,14 @@ export async function generateRecipeDraft({
   image,
   name,
   description,
+  estimatePeople = 2,
   config,
   signal,
 }: {
   image?: Blob;
   name?: string;
   description?: string;
+  estimatePeople?: number;
   config: AIProviderConfig;
   signal?: AbortSignal;
 }): Promise<Partial<RecipeInput>> {
@@ -189,9 +191,11 @@ export async function generateRecipeDraft({
     throw new AppError("VALIDATION", "请先上传可用于 AI 的图片，或填写菜名/原始说明");
   }
   const dataUrl = aiImage ? await readAsDataUrl(aiImage) : undefined;
+  const people = Number.isFinite(estimatePeople) ? Math.max(1, Math.min(20, Math.round(estimatePeople))) : 2;
   const text = [
     name?.trim() ? `菜品名称：${name.trim()}` : "",
     description?.trim() ? `补充说明：${description.trim()}` : "",
+    `请按 ${people} 人正常一餐的用量，估算每项食材的可食用克数 grams；图片只能提供大致判断，结果将由用户修改确认。`,
     aiImage ? "请结合图片生成菜谱草稿。" : "请根据提供的菜名或原始说明生成菜谱草稿。",
   ].filter(Boolean).join("\n");
   const requestBody = {
