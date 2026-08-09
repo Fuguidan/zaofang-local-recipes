@@ -9,6 +9,7 @@ const enabledConfig: AIProviderConfig = {
   model: "vision-model",
   apiKey: "sk-test-secret",
   enabled: true,
+  thinkingEnabled: false,
 };
 
 const aiResponse = {
@@ -72,19 +73,37 @@ test("generates recipe draft from dish name only", async () => {
 });
 
 test("normalizes OpenAI and Responses API token usage fields", () => {
-  assert.deepEqual(extractTokenUsage({ usage: { prompt_tokens: 120, completion_tokens: 35, total_tokens: 155 } }), {
-    inputTokens: 120, outputTokens: 35, totalTokens: 155, available: true,
+  assert.deepEqual(extractTokenUsage({ usage: { prompt_tokens: 120, completion_tokens: 35, total_tokens: 155, completion_tokens_details: { reasoning_tokens: 15 } } }), {
+    inputTokens: 120, outputTokens: 35, reasoningTokens: 15, answerTokens: 20, totalTokens: 155, available: true,
   });
-  assert.deepEqual(extractTokenUsage({ usage: { input_tokens: 80, output_tokens: 20 } }), {
-    inputTokens: 80, outputTokens: 20, totalTokens: 100, available: true,
+  assert.deepEqual(extractTokenUsage({ usage: { input_tokens: 80, output_tokens: 20, output_tokens_details: { reasoning_tokens: 12 } } }), {
+    inputTokens: 80, outputTokens: 20, reasoningTokens: 12, answerTokens: 8, totalTokens: 100, available: true,
   });
   assert.deepEqual(extractTokenUsage({ choices: [] }), { available: false });
 });
 
 test("formats a readable token log with a sanitized dish name", () => {
-  assert.equal(formatRecipeTokenUsageLog({ dishName: "番茄；炒蛋\n", inputTokens: 120, outputTokens: 35, totalTokens: 155, available: true }),
-    "菜名=番茄 炒蛋；输入=120 token；输出=35 token；总计=155 token");
+  assert.equal(formatRecipeTokenUsageLog({ dishName: "番茄；炒蛋\n", inputTokens: 120, outputTokens: 35, reasoningTokens: 15, answerTokens: 20, totalTokens: 155, available: true }),
+    "菜名=番茄 炒蛋；输入=120 token；输出=35 token；思考=15 token；回答=20 token；总计=155 token");
   assert.match(formatRecipeTokenUsageLog({ dishName: "红烧肉", available: false }), /服务未提供/);
+});
+
+test("sends the configured thinking switch to DashScope recipe generation", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify(aiResponse), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const dashscope = { ...enabledConfig, endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" };
+    await generateRecipeDraft({ name: "番茄炒蛋", config: { ...dashscope, thinkingEnabled: false } });
+    await generateRecipeDraft({ name: "番茄炒蛋", config: { ...dashscope, thinkingEnabled: true } });
+    assert.equal(bodies[0].enable_thinking, false);
+    assert.equal(bodies[1].enable_thinking, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("reports token usage with the generated dish name once per recipe generation", async () => {

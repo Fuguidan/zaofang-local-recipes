@@ -15,6 +15,8 @@ export type AIFailure =
 export interface AITokenUsage {
   inputTokens?: number;
   outputTokens?: number;
+  reasoningTokens?: number;
+  answerTokens?: number;
   totalTokens?: number;
   available: boolean;
 }
@@ -26,7 +28,7 @@ export interface AIRecipeTokenUsage extends AITokenUsage {
 export function formatRecipeTokenUsageLog(usage: AIRecipeTokenUsage) {
   const dishName = usage.dishName.replace(/[\r\n；;]/g, " ").trim().slice(0, 60) || "未识别菜名";
   const valueOrUnavailable = (tokens?: number) => tokens === undefined ? "服务未提供" : String(tokens);
-  return `菜名=${dishName}；输入=${valueOrUnavailable(usage.inputTokens)} token；输出=${valueOrUnavailable(usage.outputTokens)} token；总计=${valueOrUnavailable(usage.totalTokens)} token`;
+  return `菜名=${dishName}；输入=${valueOrUnavailable(usage.inputTokens)} token；输出=${valueOrUnavailable(usage.outputTokens)} token；思考=${valueOrUnavailable(usage.reasoningTokens)} token；回答=${valueOrUnavailable(usage.answerTokens)} token；总计=${valueOrUnavailable(usage.totalTokens)} token`;
 }
 
 const SYSTEM_PROMPT = `你是菜谱结构化助手。根据用户提供的菜品图片、菜品名称或补充文字生成菜谱草稿，仅返回JSON：
@@ -63,6 +65,14 @@ function normalizeAIModel(endpoint: string, model: string) {
 
 function hostnameOf(endpoint: string) {
   try { return new URL(endpoint).hostname; } catch { return ""; }
+}
+
+export function supportsThinkingToggle(endpoint: string) {
+  return /(?:^|\.)aliyuncs\.com$/i.test(hostnameOf(endpoint));
+}
+
+function thinkingRequestOptions(config: AIProviderConfig) {
+  return supportsThinkingToggle(config.endpoint) ? { enable_thinking: config.thinkingEnabled } : {};
 }
 
 export function normalizeAIEndpoint(endpoint: string) {
@@ -158,11 +168,13 @@ export async function testAIVisionCapability(config: AIProviderConfig, signal?: 
   if (!normalizedConfig.apiKey || !normalizedConfig.endpoint || !normalizedConfig.model) {
     throw new AppError("NETWORK", "未配置 AI 接口地址、模型或 API Key");
   }
+  const testConfig = { ...normalizedConfig, thinkingEnabled: false };
   const dataUrl = await readAsDataUrl(visionTestPngBlob());
   await sendAIChatRequest({
-    model: normalizedConfig.model,
+    model: testConfig.model,
     temperature: 0,
     max_tokens: 32,
+    ...thinkingRequestOptions(testConfig),
     messages: [{
       role: "user",
       content: [
@@ -170,7 +182,7 @@ export async function testAIVisionCapability(config: AIProviderConfig, signal?: 
         { type: "image_url", image_url: { url: dataUrl } },
       ],
     }],
-  }, normalizedConfig, signal);
+  }, testConfig, signal);
 }
 
 function visionTestPngBlob() {
@@ -220,6 +232,7 @@ export async function generateRecipeDraft({
   const requestBody = {
     model: normalizedConfig.model,
     temperature: 0.1,
+    ...thinkingRequestOptions(normalizedConfig),
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       {
@@ -306,10 +319,20 @@ export function extractTokenUsage(body: unknown): AITokenUsage {
   if (!isRecord(body) || !isRecord(body.usage)) return { available: false };
   const inputTokens = tokenNumber(body.usage.prompt_tokens) ?? tokenNumber(body.usage.input_tokens);
   const outputTokens = tokenNumber(body.usage.completion_tokens) ?? tokenNumber(body.usage.output_tokens);
+  const completionDetails = isRecord(body.usage.completion_tokens_details) ? body.usage.completion_tokens_details : undefined;
+  const outputDetails = isRecord(body.usage.output_tokens_details) ? body.usage.output_tokens_details : undefined;
+  const reasoningTokens = tokenNumber(completionDetails?.reasoning_tokens) ?? tokenNumber(outputDetails?.reasoning_tokens);
+  const answerTokens = outputTokens !== undefined && reasoningTokens !== undefined ? Math.max(0, outputTokens - reasoningTokens) : undefined;
   const reportedTotal = tokenNumber(body.usage.total_tokens);
   const totalTokens = reportedTotal ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined);
   const available = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined;
-  return available ? { inputTokens, outputTokens, totalTokens, available: true } : { available: false };
+  return available ? {
+    inputTokens,
+    outputTokens,
+    ...(reasoningTokens !== undefined ? { reasoningTokens, answerTokens } : {}),
+    totalTokens,
+    available: true,
+  } : { available: false };
 }
 
 function extractModelContent(body: unknown): string {

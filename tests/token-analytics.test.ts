@@ -8,11 +8,11 @@ function usageLog(timestamp: string, message: string, id = crypto.randomUUID()):
 }
 
 test("parses per-dish token usage logs and ignores unavailable values", () => {
-  assert.deepEqual(parseTokenUsageLog(usageLog("2026-08-09T08:00:00.000Z", "菜名=番茄炒蛋；输入=246 token；输出=73 token；总计=319 token")), {
-    dishName: "番茄炒蛋", inputTokens: 246, outputTokens: 73, totalTokens: 319,
+  assert.deepEqual(parseTokenUsageLog(usageLog("2026-08-09T08:00:00.000Z", "菜名=番茄炒蛋；输入=246 token；输出=73 token；思考=30 token；回答=43 token；总计=319 token")), {
+    dishName: "番茄炒蛋", inputTokens: 246, outputTokens: 73, reasoningTokens: 30, answerTokens: 43, reasoningAvailable: true, totalTokens: 319,
   });
   assert.deepEqual(parseTokenUsageLog(usageLog("2026-08-09T08:00:00.000Z", "菜名=红烧肉；输入=服务未提供 token；输出=服务未提供 token；总计=服务未提供 token")), {
-    dishName: "红烧肉", inputTokens: 0, outputTokens: 0, totalTokens: 0,
+    dishName: "红烧肉", inputTokens: 0, outputTokens: 0, reasoningTokens: 0, answerTokens: 0, reasoningAvailable: false, totalTokens: 0,
   });
   assert.equal(parseTokenUsageLog({ ...usageLog("2026-08-09T08:00:00.000Z", "irrelevant"), event: "startup_ready" }), undefined);
 });
@@ -28,6 +28,9 @@ test("summarizes token usage by selected period and dish", () => {
   assert.equal(weekly.requestCount, 2);
   assert.equal(weekly.inputTokens, 300);
   assert.equal(weekly.outputTokens, 70);
+  assert.equal(weekly.answerTokens, 70);
+  assert.equal(weekly.reasoningTokens, 0);
+  assert.equal(weekly.unseparatedCount, 2);
   assert.equal(weekly.totalTokens, 370);
   assert.deepEqual(weekly.dishes.map((item) => [item.name, item.totalTokens]), [["红烧肉", 250], ["番茄炒蛋", 120]]);
 

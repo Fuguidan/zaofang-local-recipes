@@ -6,10 +6,13 @@ export interface ParsedTokenUsage {
   dishName: string;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
+  answerTokens: number;
+  reasoningAvailable: boolean;
   totalTokens: number;
 }
 
-export interface TokenUsageDish extends Omit<ParsedTokenUsage, "dishName"> {
+export interface TokenUsageDish extends Omit<ParsedTokenUsage, "dishName" | "reasoningAvailable"> {
   name: string;
   requestCount: number;
 }
@@ -24,8 +27,11 @@ export interface TokenUsageAnalytics {
   requestCount: number;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
+  answerTokens: number;
   totalTokens: number;
   unavailableCount: number;
+  unseparatedCount: number;
   dishes: TokenUsageDish[];
   days: TokenUsageDay[];
 }
@@ -41,11 +47,18 @@ export function parseTokenUsageLog(entry: LogEntry): ParsedTokenUsage | undefine
   if (!dishMatch) return undefined;
   const inputTokens = tokenValue(entry.message, "输入");
   const outputTokens = tokenValue(entry.message, "输出");
+  const reasoningAvailable = /思考=\d+\s*token/i.test(entry.message);
+  const reasoningTokens = tokenValue(entry.message, "思考");
+  const loggedAnswer = tokenValue(entry.message, "回答");
+  const answerTokens = reasoningAvailable ? loggedAnswer || Math.max(0, outputTokens - reasoningTokens) : outputTokens;
   const reportedTotal = tokenValue(entry.message, "总计");
   return {
     dishName: dishMatch[1].trim() || "未识别菜名",
     inputTokens,
     outputTokens,
+    reasoningTokens,
+    answerTokens,
+    reasoningAvailable,
     totalTokens: reportedTotal || inputTokens + outputTokens,
   };
 }
@@ -76,8 +89,11 @@ export function buildTokenUsageAnalytics(
     requestCount: 0,
     inputTokens: 0,
     outputTokens: 0,
+    reasoningTokens: 0,
+    answerTokens: 0,
     totalTokens: 0,
     unavailableCount: 0,
+    unseparatedCount: 0,
     dishes: [],
     days: [],
   };
@@ -90,12 +106,17 @@ export function buildTokenUsageAnalytics(
     result.requestCount += 1;
     result.inputTokens += usage.inputTokens;
     result.outputTokens += usage.outputTokens;
+    result.reasoningTokens += usage.reasoningTokens;
+    result.answerTokens += usage.answerTokens;
     result.totalTokens += usage.totalTokens;
     if (usage.inputTokens === 0 && usage.outputTokens === 0 && usage.totalTokens === 0) result.unavailableCount += 1;
+    if (!usage.reasoningAvailable && usage.outputTokens > 0) result.unseparatedCount += 1;
 
-    const dish = dishes.get(usage.dishName) || { name: usage.dishName, inputTokens: 0, outputTokens: 0, totalTokens: 0, requestCount: 0 };
+    const dish = dishes.get(usage.dishName) || { name: usage.dishName, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, answerTokens: 0, totalTokens: 0, requestCount: 0 };
     dish.inputTokens += usage.inputTokens;
     dish.outputTokens += usage.outputTokens;
+    dish.reasoningTokens += usage.reasoningTokens;
+    dish.answerTokens += usage.answerTokens;
     dish.totalTokens += usage.totalTokens;
     dish.requestCount += 1;
     dishes.set(usage.dishName, dish);

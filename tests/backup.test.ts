@@ -6,7 +6,7 @@ import type { AppSettings, Recipe } from "../app/lib/types.ts";
 
 const settings: AppSettings = {
   debugMode: true,
-  ai: { endpoint: "https://example.test", model: "vision", apiKey: "sk-super-secret", enabled: true },
+  ai: { endpoint: "https://example.test", model: "vision", apiKey: "sk-super-secret", enabled: true, thinkingEnabled: false },
   nutrition: { visibleNutrients: ["energyKcal", "proteinG", "fiberG"], estimatePeople: 3 },
 };
 

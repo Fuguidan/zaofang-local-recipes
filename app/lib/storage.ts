@@ -89,6 +89,7 @@ const defaultSettings: AppSettings = {
     model: envValue("VITE_AI_MODEL"),
     apiKey: "",
     enabled: envValue("VITE_AI_ENABLED") === "true",
+    thinkingEnabled: false,
   },
   nutrition: { visibleNutrients: ["energyKcal", "proteinG", "carbohydrateG", "fatG"], estimatePeople: 2 },
 };

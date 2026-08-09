@@ -78,6 +78,7 @@ export interface AIProviderConfig {
   model: string;
   apiKey: string;
   enabled: boolean;
+  thinkingEnabled: boolean;
 }
 
 export type LogLevel = "debug" | "info" | "warn" | "error";

@@ -20,7 +20,7 @@ import { AppError, toAppError } from "../lib/errors";
 import { logger } from "../lib/logger";
 import { recommendRecipes } from "../lib/recommendation";
 import { createBackup, parseBackup } from "../lib/backup";
-import { AIRequestError, formatRecipeTokenUsageLog, generateRecipeDraft, normalizeAIConfig, resolveAIRequestTarget, testAIVisionCapability } from "../lib/ai";
+import { AIRequestError, formatRecipeTokenUsageLog, generateRecipeDraft, normalizeAIConfig, resolveAIRequestTarget, supportsThinkingToggle, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
 import { ImageEditorDialog } from "./ImageEditorDialog";
@@ -167,7 +167,7 @@ export default function RecipeApp() {
   const [history, setHistory] = useState<RecommendationHistory[]>([]);
   const [settings, setSettings] = useState<AppSettings>({
     debugMode: false,
-    ai: { endpoint: "https://api.deepseek.com/chat/completions", model: "", apiKey: "", enabled: false },
+    ai: { endpoint: "https://api.deepseek.com/chat/completions", model: "", apiKey: "", enabled: false, thinkingEnabled: false },
     nutrition: { visibleNutrients: ["energyKcal", "proteinG", "carbohydrateG", "fatG"], estimatePeople: 2 },
   });
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -556,8 +556,10 @@ function RecipeEditor({
   const [parsing, setParsing] = useState(false);
   const [parseNotice, setParseNotice] = useState("");
   const [imageEditor, setImageEditor] = useState<{ source: Blob; sourceName: string }>();
+  const [thinkingEnabled, setThinkingEnabled] = useState(settings.ai.thinkingEnabled);
   const abortRef = useRef<AbortController | null>(null);
   const [customTag, setCustomTag] = useState("");
+  const thinkingSupported = supportsThinkingToggle(settings.ai.endpoint);
   const patch = <K extends keyof RecipeInput>(key: K, next: RecipeInput[K]) => onChange({ ...value, [key]: next });
 
   async function generateDraft(mode: "image" | "text") {
@@ -594,7 +596,7 @@ function RecipeEditor({
         name: value.name,
         description: value.description,
         estimatePeople: settings.nutrition.estimatePeople,
-        config: settings.ai,
+        config: { ...settings.ai, thinkingEnabled: thinkingSupported && thinkingEnabled },
         signal: abortRef.current.signal,
         onUsage: async (usage) => {
           await logger.info("ai", "recipe_token_usage", operationId, {
@@ -686,7 +688,11 @@ function RecipeEditor({
             )}
             <label className="field"><span>原始说明</span><textarea rows={3} value={value.description} onChange={(event) => patch("description", event.target.value)} placeholder="例如：外婆做的红烧肉，偏甜口……" /></label>
             <div className="parse-panel">
-              <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"} · 按 ${settings.nutrition.estimatePeople} 人估算` : "尚未配置 API Key") : "设置中未开启"}</small></div>
+              <div><strong>智能生成</strong><small>{settings.ai.enabled ? (settings.ai.apiKey ? `使用 ${settings.ai.model || "已配置模型"} · 按 ${settings.nutrition.estimatePeople} 人估算 · ${thinkingSupported && thinkingEnabled ? "深度思考" : "快速生成"}` : "尚未配置 API Key") : "设置中未开启"}</small></div>
+              <div className="ai-thinking-choice" role="group" aria-label="本次生成是否开启思考">
+                <button className={!thinkingEnabled ? "active" : ""} aria-pressed={!thinkingEnabled} onClick={() => setThinkingEnabled(false)}>关闭思考</button>
+                <button className={thinkingEnabled ? "active" : ""} aria-pressed={thinkingEnabled} disabled={!thinkingSupported} title={thinkingSupported ? "本次生成启用深度思考" : "当前接口不支持思考开关"} onClick={() => setThinkingEnabled(true)}>开启思考</button>
+              </div>
               {parsing ? <button className="button-secondary" onClick={() => abortRef.current?.abort()}>取消生成</button> : (
                 <div className="button-row ai-action-row">
                   <button className="button-secondary" disabled={!hasTextInput} onClick={() => void generateDraft("text")}>仅文字生成</button>
@@ -1157,6 +1163,7 @@ function SettingsView({
   );
   const maxDishTokens = Math.max(1, ...tokenAnalytics.dishes.map((item) => item.totalTokens));
   const maxDayTokens = Math.max(1, ...tokenAnalytics.days.map((item) => item.totalTokens));
+  const thinkingToggleSupported = supportsThinkingToggle(draft.ai.endpoint);
 
   function ensureAiConfig() {
     if (!draft.ai.apiKey || !draft.ai.endpoint || !draft.ai.model) {
@@ -1227,6 +1234,10 @@ function SettingsView({
           <label className="field"><span>兼容接口地址</span><input value={draft.ai.endpoint} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, endpoint: event.target.value } })} /></label>
           <label className="field"><span>模型名</span><input value={draft.ai.model} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, model: event.target.value } })} placeholder="填写支持图片输入的模型" /></label>
           <label className="field"><span>API Key</span><input type="password" autoComplete="off" value={draft.ai.apiKey} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, apiKey: event.target.value } })} placeholder="仅保存在当前浏览器" /></label>
+          <div className={`thinking-setting${thinkingToggleSupported ? "" : " unsupported"}`}>
+            <div><strong>开启深度思考</strong><p>{thinkingToggleSupported ? "开启后模型会先推理再生成，识别可能更细致，但会增加耗时和 Token；菜谱识别通常建议关闭。" : "当前仅对阿里云百炼兼容接口发送 enable_thinking 参数。其他接口暂不自动传递，避免不兼容。"}</p></div>
+            <label className="switch"><input type="checkbox" disabled={!thinkingToggleSupported} checked={draft.ai.thinkingEnabled} onChange={(event) => setDraft({ ...draft, ai: { ...draft.ai, thinkingEnabled: event.target.checked } })} /><span /></label>
+          </div>
           {testNotice && <p className="inline-notice">{testNotice}</p>}
           <div className="button-row"><button className="button-secondary" disabled={testing} onClick={() => void testConnection()}>{testing ? "正在测试…" : "测试文本连接"}</button><button className="button-secondary" disabled={testing} onClick={() => void testVision()}>测试图片能力</button><button className="button-primary" onClick={() => void onSettings({ ...draft, ai: normalizeAIConfig(draft.ai) })}>保存设置</button></div>
         </section>
@@ -1292,7 +1303,8 @@ function SettingsView({
         <div className="token-summary-grid">
           <div><small>生成次数</small><strong>{tokenAnalytics.requestCount.toLocaleString("zh-CN")}</strong><span>道菜</span></div>
           <div><small>输入 Token</small><strong>{tokenAnalytics.inputTokens.toLocaleString("zh-CN")}</strong><span>提示与图片</span></div>
-          <div><small>输出 Token</small><strong>{tokenAnalytics.outputTokens.toLocaleString("zh-CN")}</strong><span>模型生成</span></div>
+          <div><small>回答 Token</small><strong>{tokenAnalytics.answerTokens.toLocaleString("zh-CN")}</strong><span>最终菜谱内容</span></div>
+          <div><small>思考 Token</small><strong>{tokenAnalytics.reasoningTokens.toLocaleString("zh-CN")}</strong><span>模型内部推理</span></div>
           <div className="token-total"><small>总 Token</small><strong>{tokenAnalytics.totalTokens.toLocaleString("zh-CN")}</strong><span>输入 + 输出</span></div>
         </div>
         {tokenAnalytics.requestCount ? (
@@ -1312,7 +1324,7 @@ function SettingsView({
               <div className="token-dish-list">
                 {tokenAnalytics.dishes.slice(0, 8).map((dish) => (
                   <div className="token-dish" key={dish.name}>
-                    <div><strong>{dish.name}</strong><small>{dish.requestCount} 次 · {dish.totalTokens.toLocaleString("zh-CN")}</small></div>
+                    <div><strong>{dish.name}</strong><small>{dish.requestCount} 次 · 回答 {dish.answerTokens.toLocaleString("zh-CN")} · 思考 {dish.reasoningTokens.toLocaleString("zh-CN")}</small></div>
                     <span><i style={{ width: `${Math.max(3, dish.totalTokens / maxDishTokens * 100)}%` }} /></span>
                   </div>
                 ))}
@@ -1320,7 +1332,7 @@ function SettingsView({
             </div>
           </div>
         ) : <div className="token-empty">当前时间范围还没有 Token 记录。生成菜谱后会自动在这里统计。</div>}
-        <p className="token-footnote">统计来源于本机最近 {logs.length} 条诊断记录；模型未返回 usage 的 {tokenAnalytics.unavailableCount} 次不会估算 Token。清空日志会同时清空统计。</p>
+        <p className="token-footnote">统计来源于本机最近 {logs.length} 条诊断记录；模型未返回 usage 的 {tokenAnalytics.unavailableCount} 次不会估算 Token。旧记录或接口未返回思考明细的 {tokenAnalytics.unseparatedCount} 次计入回答 Token，不伪造思考量。清空日志会同时清空统计。</p>
       </section>
       <section className="panel log-panel">
         <div className="panel-heading"><div><span className="eyebrow">最近 {logs.length} 条</span><h2>诊断记录</h2></div><div className="segmented">{(["all", "warn", "error"] as const).map((item) => <button className={filter === item ? "active" : ""} key={item} onClick={() => setFilter(item)}>{item === "all" ? "全部" : item === "warn" ? "警告" : "错误"}</button>)}</div></div>
