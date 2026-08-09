@@ -25,6 +25,7 @@ import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../li
 import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
 import { ImageEditorDialog } from "./ImageEditorDialog";
 import { calculateRecipeNutrition, formatFoodDisplayLabel, formatNutrientValue, getFoodReference, LOCAL_NUTRITION_DATA_INFO, NUTRIENT_KEYS, NUTRIENT_META, searchFoods, suggestIngredientNutrition } from "../lib/nutrition";
+import { findDuplicateRecipeByName } from "../lib/recipe-name";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
 type EditorMode = "create" | "edit";
@@ -162,6 +163,7 @@ export default function RecipeApp() {
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe>();
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Recipe>();
+  const [duplicateSave, setDuplicateSave] = useState<{ input: RecipeInput; id?: string; existing: Recipe }>();
 
   const reloadLogs = useCallback(() => logStore.all().then(setLogs).catch(() => undefined), []);
 
@@ -213,12 +215,19 @@ export default function RecipeApp() {
     );
   }, [recipes, search]);
 
-  async function saveRecipe(input: RecipeInput, id?: string) {
+  async function saveRecipe(input: RecipeInput, id?: string, allowDuplicate = false) {
     const operationId = crypto.randomUUID();
     const started = performance.now();
     try {
       if (!input.name.trim() && !input.description.trim() && !input.image) {
         throw new AppError("VALIDATION", "至少填写菜名、说明或上传图片");
+      }
+      const duplicate = !allowDuplicate ? findDuplicateRecipeByName(recipes, input.name, id) : undefined;
+      if (duplicate) {
+        setDuplicateSave({ input, id, existing: duplicate });
+        await logger.warn("recipe", "duplicate_name_detected", operationId, { result: "confirmation_required" });
+        await reloadLogs();
+        return;
       }
       const existing = id ? recipes.find((item) => item.id === id) : undefined;
       const now = new Date().toISOString();
@@ -234,6 +243,7 @@ export default function RecipeApp() {
       };
       await recipeStore.put(recipe);
       setRecipes((current) => [recipe, ...current.filter((item) => item.id !== recipe.id)]);
+      setDuplicateSave(undefined);
       setEditor(undefined);
       setSelectedRecipe(recipe);
       setNotice(existing ? "菜谱已更新" : "菜谱已保存到本机");
@@ -392,6 +402,19 @@ export default function RecipeApp() {
           confirmLabel="确认删除"
           onCancel={() => setDeleteTarget(undefined)}
           onConfirm={() => void deleteRecipe(deleteTarget)}
+        />
+      )}
+      {duplicateSave && (
+        <ConfirmDialog
+          title="已存在同名菜谱"
+          body={`“${duplicateSave.existing.name}”已经保存在本机。建议返回修改菜名；如果仍然保存，将保留两条同名菜谱。`}
+          confirmLabel="仍然保存"
+          onCancel={() => setDuplicateSave(undefined)}
+          onConfirm={() => {
+            const pending = duplicateSave;
+            setDuplicateSave(undefined);
+            return saveRecipe(pending.input, pending.id, true);
+          }}
         />
       )}
       <ErrorNotice error={error} onClose={() => setError(undefined)} />
