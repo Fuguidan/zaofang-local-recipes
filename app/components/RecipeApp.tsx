@@ -26,9 +26,23 @@ import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithA
 import { ImageEditorDialog } from "./ImageEditorDialog";
 import { calculateRecipeNutrition, formatFoodDisplayLabel, formatNutrientValue, getFoodReference, LOCAL_NUTRITION_DATA_INFO, NUTRIENT_KEYS, NUTRIENT_META, searchFoods, suggestIngredientNutrition } from "../lib/nutrition";
 import { findDuplicateRecipeByName } from "../lib/recipe-name";
+import { getPaginationModel, paginateItems, RECIPE_PAGE_SIZE } from "../lib/recipe-library";
+import { buildTokenUsageAnalytics, type TokenUsagePeriod } from "../lib/token-analytics";
 
 type View = "recipes" | "recommend" | "backup" | "settings";
 type EditorMode = "create" | "edit";
+type RecipeLibraryMode = "list" | "tiles";
+
+const RECIPE_VIEW_STORAGE_KEY = "zaofang-recipe-view";
+
+function loadRecipeLibraryMode(): RecipeLibraryMode {
+  if (typeof localStorage === "undefined") return "list";
+  try { return localStorage.getItem(RECIPE_VIEW_STORAGE_KEY) === "tiles" ? "tiles" : "list"; } catch { return "list"; }
+}
+
+function saveRecipeLibraryMode(mode: RecipeLibraryMode) {
+  try { localStorage.setItem(RECIPE_VIEW_STORAGE_KEY, mode); } catch { /* View preference is non-critical. */ }
+}
 
 const FLAVORS: Flavor[] = ["清淡", "辛辣", "酸甜", "咸鲜", "麻辣", "鲜香"];
 const MEALS: Array<{ value: MealType; label: string }> = [
@@ -147,6 +161,7 @@ function ImageThumb({ recipe, large = false }: { recipe: Recipe; large?: boolean
 }
 
 export default function RecipeApp() {
+  const [sessionStartedAt] = useState(() => new Date());
   const [view, setView] = useState<View>("recipes");
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [history, setHistory] = useState<RecommendationHistory[]>([]);
@@ -367,6 +382,7 @@ export default function RecipeApp() {
               <SettingsView
                 settings={settings}
                 logs={logs}
+                sessionStartedAt={sessionStartedAt}
                 onSettings={async (next) => {
                   await settingsStore.put(next);
                   setSettings(next);
@@ -445,6 +461,17 @@ function RecipesView({
   onEdit: (recipe: Recipe) => void;
   onDelete: (recipe: Recipe) => void;
 }) {
+  const [layout, setLayout] = useState<RecipeLibraryMode>(loadRecipeLibraryMode);
+  const [page, setPage] = useState(1);
+  const pagination = getPaginationModel(recipes.length, RECIPE_PAGE_SIZE, page);
+  const visibleRecipes = paginateItems(recipes, pagination.currentPage, RECIPE_PAGE_SIZE);
+
+  function changeLayout(next: RecipeLibraryMode) {
+    setPage(1);
+    setLayout(next);
+    saveRecipeLibraryMode(next);
+  }
+
   return (
     <section className="page-section">
       <div className="page-heading">
@@ -452,21 +479,28 @@ function RecipesView({
         <button className="button-primary" onClick={onCreate}><span>＋</span> 添加菜谱</button>
       </div>
       <div className="toolbar">
-        <label className="search-field"><span>⌕</span><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="搜索菜名、食材或标签" /></label>
-        <span className="recipe-count">共 {total} 道菜谱</span>
+        <label className="search-field"><span>⌕</span><input value={search} onChange={(event) => { setPage(1); onSearch(event.target.value); }} placeholder="搜索菜名、食材或标签" /></label>
+        <div className="library-toolbar-actions">
+          <span className="recipe-count">{search ? `找到 ${recipes.length} 道` : `共 ${total} 道菜谱`}</span>
+          <div className="view-switcher" role="group" aria-label="菜谱展示方式">
+            <button className={layout === "list" ? "active" : ""} aria-pressed={layout === "list"} onClick={() => changeLayout("list")}><span aria-hidden="true">☷</span>列表</button>
+            <button className={layout === "tiles" ? "active" : ""} aria-pressed={layout === "tiles"} onClick={() => changeLayout("tiles")}><span aria-hidden="true">▦</span>平铺</button>
+          </div>
+        </div>
       </div>
       {recipes.length ? (
-        <div className="recipe-grid">
-          {recipes.map((recipe) => (
+        <>
+        <div className={`recipe-collection recipe-layout-${layout}`}>
+          {visibleRecipes.map((recipe) => (
             <article className="recipe-card" key={recipe.id}>
               <button className="card-open" onClick={() => onSelect(recipe)}>
                 <ImageThumb recipe={recipe} />
                 <div className="card-body">
                   <div className="card-meta"><span>{recipe.dietType}</span><span>{recipe.duration} 分钟</span></div>
                   <h2>{recipe.name}</h2>
-                  <p>{recipe.description || "还没有补充说明"}</p>
-                  <NutritionSummary recipe={recipe} visibleNutrients={settings.nutrition.visibleNutrients} compact />
-                  <div className="tag-row">{[...recipe.flavors, ...recipe.tags].slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}</div>
+                  {layout === "list" && <p>{recipe.description || "还没有补充说明"}</p>}
+                  {layout === "list" && <NutritionSummary recipe={recipe} visibleNutrients={settings.nutrition.visibleNutrients} compact />}
+                  <div className="tag-row">{[...recipe.flavors, ...recipe.tags].slice(0, layout === "tiles" ? 2 : 3).map((tag) => <span key={tag}>#{tag}</span>)}</div>
                   {recipe.incomplete && <span className="draft-badge">待完善</span>}
                 </div>
               </button>
@@ -477,6 +511,20 @@ function RecipesView({
             </article>
           ))}
         </div>
+        <nav className="pagination" aria-label="菜谱分页">
+          <span>第 {pagination.rangeStart}–{pagination.rangeEnd} 道，共 {recipes.length} 道</span>
+          <div>
+            <button disabled={pagination.currentPage === 1} onClick={() => setPage(pagination.currentPage - 1)} aria-label="上一页">‹</button>
+            {pagination.pages.map((item, index) => (
+              <span key={item} className="pagination-step">
+                {index > 0 && item - pagination.pages[index - 1] > 1 && <i aria-hidden="true">…</i>}
+                <button className={item === pagination.currentPage ? "active" : ""} aria-current={item === pagination.currentPage ? "page" : undefined} onClick={() => setPage(item)}>{item}</button>
+              </span>
+            ))}
+            <button disabled={pagination.currentPage === pagination.totalPages} onClick={() => setPage(pagination.currentPage + 1)} aria-label="下一页">›</button>
+          </div>
+        </nav>
+        </>
       ) : (
         <div className="empty-state"><span>空</span><h2>还没有找到合适的菜谱</h2><p>换个关键词，或录入一道新菜。</p><button className="button-primary" onClick={onCreate}>添加第一道菜</button></div>
       )}
@@ -1084,22 +1132,31 @@ function BackupView({
 function SettingsView({
   settings,
   logs,
+  sessionStartedAt,
   onSettings,
   refreshLogs,
   onError,
 }: {
   settings: AppSettings;
   logs: LogEntry[];
+  sessionStartedAt: Date;
   onSettings: (settings: AppSettings) => Promise<void>;
   refreshLogs: () => Promise<void>;
   onError: (error: AppError) => void;
 }) {
   const [draft, setDraft] = useState(settings);
   const [filter, setFilter] = useState<"all" | "warn" | "error">("all");
+  const [tokenPeriod, setTokenPeriod] = useState<TokenUsagePeriod>("month");
   const [testing, setTesting] = useState(false);
   const [testNotice, setTestNotice] = useState("");
   useEffect(() => setDraft(settings), [settings]);
   const visibleLogs = logs.filter((entry) => filter === "all" || entry.level === filter);
+  const tokenAnalytics = useMemo(
+    () => buildTokenUsageAnalytics(logs, tokenPeriod, new Date(), sessionStartedAt),
+    [logs, tokenPeriod, sessionStartedAt],
+  );
+  const maxDishTokens = Math.max(1, ...tokenAnalytics.dishes.map((item) => item.totalTokens));
+  const maxDayTokens = Math.max(1, ...tokenAnalytics.days.map((item) => item.totalTokens));
 
   function ensureAiConfig() {
     if (!draft.ai.apiKey || !draft.ai.endpoint || !draft.ai.model) {
@@ -1221,6 +1278,50 @@ function SettingsView({
           <div className="button-row"><button className="button-secondary" onClick={exportLogs}>下载脱敏日志</button><button className="danger-link" onClick={async () => { await logStore.clear(); await refreshLogs(); }}>清空日志</button></div>
         </section>
       </div>
+      <section className="panel token-dashboard">
+        <div className="panel-heading">
+          <div><span className="eyebrow">仅统计本机日志</span><h2>AI Token 用量</h2></div>
+          <div className="segmented token-period-switcher">
+            {(["session", "week", "month", "all"] as const).map((period) => (
+              <button className={tokenPeriod === period ? "active" : ""} key={period} onClick={() => setTokenPeriod(period)}>
+                {period === "session" ? "本次打开" : period === "week" ? "近 7 天" : period === "month" ? "本月" : "全部"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="token-summary-grid">
+          <div><small>生成次数</small><strong>{tokenAnalytics.requestCount.toLocaleString("zh-CN")}</strong><span>道菜</span></div>
+          <div><small>输入 Token</small><strong>{tokenAnalytics.inputTokens.toLocaleString("zh-CN")}</strong><span>提示与图片</span></div>
+          <div><small>输出 Token</small><strong>{tokenAnalytics.outputTokens.toLocaleString("zh-CN")}</strong><span>模型生成</span></div>
+          <div className="token-total"><small>总 Token</small><strong>{tokenAnalytics.totalTokens.toLocaleString("zh-CN")}</strong><span>输入 + 输出</span></div>
+        </div>
+        {tokenAnalytics.requestCount ? (
+          <div className="token-visual-grid">
+            <div className="token-chart-card">
+              <div className="token-chart-heading"><strong>按日期</strong><small>{tokenAnalytics.days.length} 个使用日</small></div>
+              <div className="token-day-chart">
+                {tokenAnalytics.days.slice(-14).map((day) => (
+                  <div className="token-day" key={day.date} title={`${day.date}：${day.totalTokens.toLocaleString("zh-CN")} Token`}>
+                    <span style={{ height: `${Math.max(5, day.totalTokens / maxDayTokens * 100)}%` }} /><small>{day.date.slice(5)}</small>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="token-chart-card">
+              <div className="token-chart-heading"><strong>按菜名</strong><small>Token 最多的菜</small></div>
+              <div className="token-dish-list">
+                {tokenAnalytics.dishes.slice(0, 8).map((dish) => (
+                  <div className="token-dish" key={dish.name}>
+                    <div><strong>{dish.name}</strong><small>{dish.requestCount} 次 · {dish.totalTokens.toLocaleString("zh-CN")}</small></div>
+                    <span><i style={{ width: `${Math.max(3, dish.totalTokens / maxDishTokens * 100)}%` }} /></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : <div className="token-empty">当前时间范围还没有 Token 记录。生成菜谱后会自动在这里统计。</div>}
+        <p className="token-footnote">统计来源于本机最近 {logs.length} 条诊断记录；模型未返回 usage 的 {tokenAnalytics.unavailableCount} 次不会估算 Token。清空日志会同时清空统计。</p>
+      </section>
       <section className="panel log-panel">
         <div className="panel-heading"><div><span className="eyebrow">最近 {logs.length} 条</span><h2>诊断记录</h2></div><div className="segmented">{(["all", "warn", "error"] as const).map((item) => <button className={filter === item ? "active" : ""} key={item} onClick={() => setFilter(item)}>{item === "all" ? "全部" : item === "warn" ? "警告" : "错误"}</button>)}</div></div>
         <div className="log-list">
