@@ -313,3 +313,15 @@
 - TDD：先增加规范化、同名命中、编辑排除自身和空名称测试，确认旧项目缺少实现，再完成代码。浏览器端到端验证同名保存前记录数不变、取消后菜名保留、确认后记录数增加且出现两张同名卡片。
 - 验证：类型检查、58 项自动测试、Web 生产构建、Capacitor 同步和 Android `assembleDebug` 全部通过。
 - 产物：重新生成 `artifacts/zaofang-android-debug.apk`。
+
+## 2026-08-09 · 菜谱 AI Token 消耗日志
+
+- 目标：每次图片或文字成功生成一道菜谱后，在本地诊断记录中按菜名显示模型输入、输出和总 Token 消耗。
+- 兼容：同时解析 OpenAI Chat Completions 的 `prompt_tokens/completion_tokens` 和 Responses API 的 `input_tokens/output_tokens`；缺少 `total_tokens` 时仅在输入、输出均存在的情况下求和。服务不返回 `usage` 时记录“服务未提供”，不自行估算。
+- 菜名：优先记录模型最终生成的菜名；模型内容无法解析时使用用户已填菜名，否则显示“未识别菜名”。菜名清理换行和分隔符并限制长度，日志不包含图片、提示词、完整响应或菜谱正文。
+- 持久化：`recipe_token_usage` 是用户要求的费用诊断记录，即使生产环境未开启详细调试也会保存；与本次生成成功/失败日志共用操作 ID，方便关联排查。
+- 界面：诊断面板显示“AI · 菜谱 Token 消耗”，消息格式为“菜名、输入 Token、输出 Token、总 Token”；设置页说明这类日志会记录菜名和数量。
+- TDD：新增两类 usage 字段规范化、缺失 usage、日志生产环境保留规则，以及每次生成只回调一条带模型菜名记录的测试。
+- 端到端：用本地 OpenAI-compatible 模拟接口完成一次图片生成，模型返回菜名“番茄炒蛋”及 246/73/319 Token，诊断面板立即显示“菜名=番茄炒蛋；输入=246 token；输出=73 token；总计=319 token”。
+- 验证：类型检查、63 项自动测试、Web 生产构建、Capacitor 同步和 Android `assembleDebug` 全部通过。
+- 产物：重新生成 `artifacts/zaofang-android-debug.apk`。

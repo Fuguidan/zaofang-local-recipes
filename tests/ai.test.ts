@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AIRequestError, generateRecipeDraft, LOCAL_AI_PROXY_PATH, normalizeAIConfig, normalizeAIEndpoint, resolveAIRequestTarget, testAIVisionCapability } from "../app/lib/ai.ts";
+import { AIRequestError, extractTokenUsage, formatRecipeTokenUsageLog, generateRecipeDraft, LOCAL_AI_PROXY_PATH, normalizeAIConfig, normalizeAIEndpoint, resolveAIRequestTarget, testAIVisionCapability } from "../app/lib/ai.ts";
 import { isHeicImage } from "../app/lib/images.ts";
 import type { AIProviderConfig } from "../app/lib/types.ts";
 
@@ -66,6 +66,41 @@ test("generates recipe draft from dish name only", async () => {
     const body = bodies[0] as { messages: Array<{ content: unknown }> };
     assert.equal(typeof body.messages[1].content, "string");
     assert.match(String(body.messages[1].content), /菜品名称：番茄炒蛋/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("normalizes OpenAI and Responses API token usage fields", () => {
+  assert.deepEqual(extractTokenUsage({ usage: { prompt_tokens: 120, completion_tokens: 35, total_tokens: 155 } }), {
+    inputTokens: 120, outputTokens: 35, totalTokens: 155, available: true,
+  });
+  assert.deepEqual(extractTokenUsage({ usage: { input_tokens: 80, output_tokens: 20 } }), {
+    inputTokens: 80, outputTokens: 20, totalTokens: 100, available: true,
+  });
+  assert.deepEqual(extractTokenUsage({ choices: [] }), { available: false });
+});
+
+test("formats a readable token log with a sanitized dish name", () => {
+  assert.equal(formatRecipeTokenUsageLog({ dishName: "番茄；炒蛋\n", inputTokens: 120, outputTokens: 35, totalTokens: 155, available: true }),
+    "菜名=番茄 炒蛋；输入=120 token；输出=35 token；总计=155 token");
+  assert.match(formatRecipeTokenUsageLog({ dishName: "红烧肉", available: false }), /服务未提供/);
+});
+
+test("reports token usage with the generated dish name once per recipe generation", async () => {
+  const records: Array<{ dishName: string; inputTokens?: number; outputTokens?: number; totalTokens?: number; available: boolean }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    ...aiResponse,
+    usage: { prompt_tokens: 321, completion_tokens: 87, total_tokens: 408 },
+  }), { status: 200 })) as typeof fetch;
+  try {
+    await generateRecipeDraft({
+      name: "用户暂填菜名",
+      config: enabledConfig,
+      onUsage: (record) => { records.push(record); },
+    });
+    assert.deepEqual(records, [{ dishName: "番茄炒蛋", inputTokens: 321, outputTokens: 87, totalTokens: 408, available: true }]);
   } finally {
     globalThis.fetch = originalFetch;
   }

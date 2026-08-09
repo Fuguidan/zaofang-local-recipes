@@ -1,5 +1,5 @@
-import type { AppSettings, LogEntry, Recipe, RecommendationHistory } from "./types";
-import { toAppError } from "./errors";
+import type { AppSettings, LogEntry, Recipe, RecommendationHistory } from "./types.ts";
+import { toAppError } from "./errors.ts";
 
 const DB_NAME = "zaofan-local";
 const DB_VERSION = 1;

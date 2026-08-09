@@ -12,6 +12,23 @@ export type AIFailure =
   | "bad_model_payload"
   | "bad_recipe_json";
 
+export interface AITokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  available: boolean;
+}
+
+export interface AIRecipeTokenUsage extends AITokenUsage {
+  dishName: string;
+}
+
+export function formatRecipeTokenUsageLog(usage: AIRecipeTokenUsage) {
+  const dishName = usage.dishName.replace(/[\r\n；;]/g, " ").trim().slice(0, 60) || "未识别菜名";
+  const valueOrUnavailable = (tokens?: number) => tokens === undefined ? "服务未提供" : String(tokens);
+  return `菜名=${dishName}；输入=${valueOrUnavailable(usage.inputTokens)} token；输出=${valueOrUnavailable(usage.outputTokens)} token；总计=${valueOrUnavailable(usage.totalTokens)} token`;
+}
+
 const SYSTEM_PROMPT = `你是菜谱结构化助手。根据用户提供的菜品图片、菜品名称或补充文字生成菜谱草稿，仅返回JSON：
 {"name":"","description":"","ingredients":[{"name":"","amount":"","unit":"","grams":100,"note":""}],"steps":[""],"meals":["breakfast|lunch|dinner"],"flavors":["清淡|辛辣|酸甜|咸鲜|麻辣|鲜香"],"tags":[],"dietType":"荤菜|素菜|主食|汤羹","duration":30,"difficulty":"简单|适中|进阶"}。grams 是可食用重量估计，无法判断时省略。不要返回Markdown。`;
 
@@ -174,6 +191,7 @@ export async function generateRecipeDraft({
   estimatePeople = 2,
   config,
   signal,
+  onUsage,
 }: {
   image?: Blob;
   name?: string;
@@ -181,6 +199,7 @@ export async function generateRecipeDraft({
   estimatePeople?: number;
   config: AIProviderConfig;
   signal?: AbortSignal;
+  onUsage?: (usage: AIRecipeTokenUsage) => void | Promise<void>;
 }): Promise<Partial<RecipeInput>> {
   const normalizedConfig = normalizeAIConfig(config);
   if (!normalizedConfig.enabled || !normalizedConfig.apiKey || !normalizedConfig.endpoint || !normalizedConfig.model) {
@@ -216,11 +235,20 @@ export async function generateRecipeDraft({
   };
   const completion = await sendAIChatRequest(requestBody, normalizedConfig, signal);
   const content = stripJsonFence(completion.content);
+  let draft: Partial<RecipeInput>;
   try {
-    return normalizeDraft(JSON.parse(content) as Partial<RecipeInput>);
+    draft = normalizeDraft(JSON.parse(content) as Partial<RecipeInput>);
   } catch (error) {
+    await notifyTokenUsage(onUsage, { ...completion.usage, dishName: name?.trim() || "未识别菜名" });
     throw new AIRequestError("bad_recipe_json", "模型响应不是有效菜谱 JSON", completion.status, error);
   }
+  await notifyTokenUsage(onUsage, { ...completion.usage, dishName: draft.name?.trim() || name?.trim() || "未识别菜名" });
+  return draft;
+}
+
+async function notifyTokenUsage(callback: ((usage: AIRecipeTokenUsage) => void | Promise<void>) | undefined, usage: AIRecipeTokenUsage) {
+  if (!callback) return;
+  try { await callback(usage); } catch { /* Diagnostics must never make a successful generation fail. */ }
 }
 
 async function sendAIChatRequest(requestBody: unknown, normalizedConfig: AIProviderConfig, signal?: AbortSignal) {
@@ -267,7 +295,21 @@ async function sendAIChatRequest(requestBody: unknown, normalizedConfig: AIProvi
   }
   const content = stripJsonFence(extractModelContent(body));
   if (!content) throw new AIRequestError("bad_model_payload", "模型未返回可识别的文本内容（字段：" + summarizePayloadShape(body) + "）", response.status);
-  return { content, status: response.status };
+  return { content, status: response.status, usage: extractTokenUsage(body) };
+}
+
+function tokenNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
+}
+
+export function extractTokenUsage(body: unknown): AITokenUsage {
+  if (!isRecord(body) || !isRecord(body.usage)) return { available: false };
+  const inputTokens = tokenNumber(body.usage.prompt_tokens) ?? tokenNumber(body.usage.input_tokens);
+  const outputTokens = tokenNumber(body.usage.completion_tokens) ?? tokenNumber(body.usage.output_tokens);
+  const reportedTotal = tokenNumber(body.usage.total_tokens);
+  const totalTokens = reportedTotal ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined);
+  const available = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined;
+  return available ? { inputTokens, outputTokens, totalTokens, available: true } : { available: false };
 }
 
 function extractModelContent(body: unknown): string {

@@ -20,7 +20,7 @@ import { AppError, toAppError } from "../lib/errors";
 import { logger } from "../lib/logger";
 import { recommendRecipes } from "../lib/recommendation";
 import { createBackup, parseBackup } from "../lib/backup";
-import { AIRequestError, generateRecipeDraft, normalizeAIConfig, resolveAIRequestTarget, testAIVisionCapability } from "../lib/ai";
+import { AIRequestError, formatRecipeTokenUsageLog, generateRecipeDraft, normalizeAIConfig, resolveAIRequestTarget, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
 import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
 import { ImageEditorDialog } from "./ImageEditorDialog";
@@ -390,6 +390,7 @@ export default function RecipeApp() {
           onCancel={() => setEditor(undefined)}
           onSave={() => void saveRecipe(editor.value, editor.id)}
           onError={setError}
+          refreshLogs={reloadLogs}
         />
       )}
       {selectedRecipe && (
@@ -490,6 +491,7 @@ function RecipeEditor({
   onCancel,
   onSave,
   onError,
+  refreshLogs,
 }: {
   editor: { mode: EditorMode; value: RecipeInput };
   settings: AppSettings;
@@ -497,6 +499,7 @@ function RecipeEditor({
   onCancel: () => void;
   onSave: () => void;
   onError: (error: AppError) => void;
+  refreshLogs: () => Promise<void>;
 }) {
   const value = editor.value;
   const hasName = Boolean(value.name.trim());
@@ -545,6 +548,15 @@ function RecipeEditor({
         estimatePeople: settings.nutrition.estimatePeople,
         config: settings.ai,
         signal: abortRef.current.signal,
+        onUsage: async (usage) => {
+          await logger.info("ai", "recipe_token_usage", operationId, {
+            result: usage.available ? "reported" : "unavailable",
+            stage: source,
+            persist: true,
+            message: formatRecipeTokenUsageLog(usage),
+          });
+          await refreshLogs();
+        },
       });
       onChange({
         ...value,
@@ -1205,7 +1217,7 @@ function SettingsView({
         <section className="panel settings-panel">
           <div className="panel-heading"><div><span className="eyebrow">只在本机</span><h2>调试模式</h2></div><label className="switch"><input type="checkbox" checked={draft.debugMode} onChange={(event) => { const next = { ...draft, debugMode: event.target.checked }; setDraft(next); void onSettings(next); }} /><span /></label></div>
           <p>开启后记录更详细的操作阶段和耗时。日志固定保留最近 500 条，不会自动上传。</p>
-          <ul className="safe-list"><li>不会记录 API Key</li><li>不会记录图片或 ZIP 内容</li><li>不会记录完整菜谱正文</li></ul>
+          <ul className="safe-list"><li>不会记录 API Key</li><li>不会记录图片或 ZIP 内容</li><li>不会记录完整菜谱正文</li><li>AI Token 消耗日志只记录菜名和数量</li></ul>
           <div className="button-row"><button className="button-secondary" onClick={exportLogs}>下载脱敏日志</button><button className="danger-link" onClick={async () => { await logStore.clear(); await refreshLogs(); }}>清空日志</button></div>
         </section>
       </div>
@@ -1215,7 +1227,7 @@ function SettingsView({
           {visibleLogs.length ? visibleLogs.slice(0, 80).map((entry) => (
             <div className={`log-row log-${entry.level}`} key={entry.id}>
               <span className="log-level">{entry.level}</span>
-              <div><strong>{entry.module} · {entry.event}</strong><small>{new Date(entry.timestamp).toLocaleString("zh-CN")} · 操作 {entry.operationId.slice(0, 8)} {entry.durationMs ? `· ${entry.durationMs}ms` : ""}</small>{entry.message && <p>{entry.message}</p>}</div>
+              <div><strong>{entry.event === "recipe_token_usage" ? "AI · 菜谱 Token 消耗" : `${entry.module} · ${entry.event}`}</strong><small>{new Date(entry.timestamp).toLocaleString("zh-CN")} · 操作 {entry.operationId.slice(0, 8)} {entry.durationMs ? `· ${entry.durationMs}ms` : ""}</small>{entry.message && <p>{entry.message}</p>}</div>
               {entry.errorCode && <code>{entry.errorCode}</code>}
             </div>
           )) : <div className="empty-log">暂无符合条件的诊断记录</div>}

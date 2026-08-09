@@ -1,5 +1,5 @@
-import { logStore, settingsStore } from "./storage";
-import type { LogEntry, LogLevel } from "./types";
+import { logStore, settingsStore } from "./storage.ts";
+import type { LogEntry, LogLevel } from "./types.ts";
 
 const secretKeys = /api[-_]?key|authorization|token|secret|image|blob|content/i;
 
@@ -18,7 +18,13 @@ export interface LogContext {
   durationMs?: number;
   errorCode?: string;
   message?: unknown;
+  persist?: boolean;
   [key: string]: unknown;
+}
+
+export function shouldStoreLog(level: LogLevel, debugMode: boolean, production: boolean, persist: boolean) {
+  if (!production || debugMode || persist) return true;
+  return level === "warn" || level === "error";
 }
 
 export async function writeLog(
@@ -29,7 +35,7 @@ export async function writeLog(
   context: LogContext = {},
 ) {
   const settings = await settingsStore.get().catch(() => null);
-  if (!settings?.debugMode && (level === "debug" || level === "info") && process.env.NODE_ENV === "production") return;
+  if (!shouldStoreLog(level, Boolean(settings?.debugMode), process.env.NODE_ENV === "production", context.persist === true)) return;
   const safeContext = Object.fromEntries(Object.entries(context).filter(([key]) => !secretKeys.test(key)));
   const entry: LogEntry = {
     id: crypto.randomUUID(),
