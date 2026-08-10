@@ -19,10 +19,10 @@ import { clearBusinessData, historyStore, logStore, recipeStore, settingsStore }
 import { AppError, toAppError } from "../lib/errors";
 import { logger } from "../lib/logger";
 import { recommendRecipes } from "../lib/recommendation";
-import { createBackup, parseBackup } from "../lib/backup";
+import { createBackup, parseBackup, streamBackup } from "../lib/backup";
 import { AIRequestError, formatRecipeTokenUsageLog, generateRecipeDraft, normalizeAIConfig, resolveAIRequestTarget, supportsThinkingToggle, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
-import { isAndroidNativeBackupAvailable, openAndroidSavedBackup, saveBackupWithAndroid, type NativeBackupSaveResult } from "../lib/native-backup";
+import { beginAndroidBackup, isAndroidNativeBackupAvailable, openAndroidSavedBackup, type NativeBackupSaveResult } from "../lib/native-backup";
 import { ImageEditorDialog } from "./ImageEditorDialog";
 import { calculateRecipeNutrition, formatFoodDisplayLabel, formatNutrientValue, getFoodReference, LOCAL_NUTRITION_DATA_INFO, NUTRIENT_KEYS, NUTRIENT_META, searchFoods, suggestIngredientNutrition } from "../lib/nutrition";
 import { findDuplicateRecipeByName } from "../lib/recipe-name";
@@ -1000,6 +1000,7 @@ function BackupView({
   const [conflictStrategy, setConflictStrategy] = useState<"overwrite" | "keep" | "copy">("overwrite");
   const [exportDialog, setExportDialog] = useState<{ filename: string }>();
   const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
   const [exportResult, setExportResult] = useState<NativeBackupSaveResult | { filename: string; displayPath: string }>();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -1007,14 +1008,45 @@ function BackupView({
     const operationId = crypto.randomUUID();
     const started = performance.now();
     const safeFilename = filename.trim().toLowerCase().endsWith(".zip") ? filename.trim() : `${filename.trim() || defaultBackupFilename()}.zip`;
+    const imageBytes = recipes.reduce((sum, recipe) => sum + (recipe.image?.size || 0), 0);
+    let archiveBytes = 0;
+    let stage = "prepare";
     setExporting(true);
+    setExportStatus("正在整理菜谱和图片…");
     try {
-      const blob = await createBackup(recipes, settings, history);
       const nativeExport = isAndroidNativeBackupAvailable();
+      await logger.info("backup", "export_started", operationId, {
+        stage,
+        message: `records=${recipes.length};images=${recipes.filter((recipe) => recipe.image).length};imageBytes=${imageBytes}`,
+      });
       if (nativeExport) {
-        const result = await saveBackupWithAndroid(blob, safeFilename);
-        setExportResult(result);
+        stage = "android_temp_file";
+        setExportStatus("正在准备本机临时文件…");
+        const writer = await beginAndroidBackup(safeFilename);
+        try {
+          stage = "create_zip_stream";
+          setExportStatus("正在分块生成 ZIP，请不要关闭应用…");
+          const summary = await streamBackup(recipes, settings, history, (chunk) => writer.write(chunk));
+          archiveBytes = summary.zipBytes;
+          await logger.info("backup", "export_archive_ready", operationId, {
+            stage,
+            durationMs: Math.round(performance.now() - started),
+            message: `bytes=${archiveBytes};imageBytes=${summary.imageBytes};chunks=bounded`,
+          });
+          stage = "android_document_picker";
+          setExportStatus("正在打开系统位置选择器…");
+          const result = await writer.finish(archiveBytes);
+          setExportResult(result);
+        } catch (error) {
+          await writer.abort();
+          throw error;
+        }
       } else {
+        stage = "create_zip_stream";
+        setExportStatus("正在分块生成 ZIP…");
+        const blob = await createBackup(recipes, settings, history);
+        archiveBytes = blob.size;
+        stage = "browser_download";
         downloadBlob(blob, safeFilename);
         setExportResult({ filename: safeFilename, displayPath: "浏览器下载目录" });
       }
@@ -1023,7 +1055,7 @@ function BackupView({
         result: "success",
         stage: nativeExport ? "android_document_picker" : "browser_download",
         durationMs: Math.round(performance.now() - started),
-        message: `records=${recipes.length};bytes=${blob.size}`,
+        message: `records=${recipes.length};bytes=${archiveBytes}`,
       });
       await refreshLogs();
     } catch (caught) {
@@ -1032,9 +1064,16 @@ function BackupView({
         return;
       }
       const error = toAppError(caught, "BACKUP"); onError(error);
-      await logger.error("backup", "export_failed", operationId, { errorCode: error.code, message: error.message });
+      await logger.error("backup", "export_failed", operationId, {
+        errorCode: error.code,
+        result: "failure",
+        stage,
+        durationMs: Math.round(performance.now() - started),
+        message: `records=${recipes.length};imageBytes=${imageBytes};archiveBytes=${archiveBytes};reason=${error.message}`,
+      });
     } finally {
       setExporting(false);
+      setExportStatus("");
     }
   }
 
@@ -1126,6 +1165,7 @@ function BackupView({
             <span className="eyebrow">选择导出位置</span><h2>保存 ZIP 备份</h2>
             <p>{isAndroidNativeBackupAvailable() ? "下一步会打开安卓系统文件选择器。你可以使用默认文件名，也可以改名，然后选择保存目录。" : "浏览器会保存到默认下载目录，你可以先修改文件名。"}</p>
             <label className="field"><span>默认文件名</span><input value={exportDialog.filename} onChange={(event) => setExportDialog({ filename: event.target.value })} /></label>
+            {exporting && <p className="inline-notice" role="status">{exportStatus}</p>}
             <div className="button-row"><button className="button-ghost" disabled={exporting} onClick={() => setExportDialog(undefined)}>取消</button><button className="button-primary" disabled={exporting} onClick={() => void exportData(exportDialog.filename)}>{exporting ? "正在导出…" : isAndroidNativeBackupAvailable() ? "选择位置并导出" : "导出"}</button></div>
           </section>
         </div>

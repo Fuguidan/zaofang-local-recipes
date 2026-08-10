@@ -350,3 +350,17 @@
 - 浏览器验收：百炼地址下开关可用并显示成本提示，非百炼地址安全禁用；菜谱编辑页显示“关闭思考 / 开启思考”两档。390×844 手机 Token 摘要保持双列、生成选项占满可用宽度，无横向溢出或控制台错误。
 - 验证：新增源文件 ESLint、类型检查、68 项自动测试、Web 生产构建、Capacitor 同步和 Android `assembleDebug` 全部通过。
 - 产物：重新生成 `artifacts/zaofang-android-debug.apk`。
+
+## 2026-08-10 · 大体积 ZIP 流式导入导出修复
+
+- 目标：修复包含较多原图的备份在 Android 上约 20MB 后可能无响应、留下 0B 文件或因内存压力闪退的问题。
+- 原因：旧实现先把全部图片读入内存同步生成 ZIP，再把整个 ZIP 转成体积增加约三分之一的 Base64 字符串，通过 Capacitor Bridge 一次性交给 Java；JS ArrayBuffer、Base64、桥接 JSON、Java String 和解码 byte[] 会同时产生多份大对象。代码没有固定 20MB 限制，但不同手机的 WebView/应用堆上限会形成设备相关的实际阈值。
+- ZIP 生成：改用 `fflate` 流式 ZIP，图片通过 Blob stream 逐块读取，压缩结果限制为不超过 256KB 的输出块；Web 导出只汇集最终 ZIP，Android 导出直接把输出块写入原生临时文件，不再构造整包 Base64。
+- Android：`NativeBackupFile` 改为 `beginZip → appendZipChunk → finishZip` 协议。每块独立解码并追加到应用缓存文件，完成后校验写入字节数，再打开系统文件位置选择器；失败或取消通过 `abortZip` 清理临时文件，下次导出也会清理进程异常退出留下的旧缓存。
+- 导入：ZIP 文件改为从文件流逐块交给解压器，不再先调用整个文件的 `arrayBuffer()`；损坏或截断 ZIP 返回可理解的备份错误，不写入本地数据库。
+- 诊断：导出日志增加 `prepare`、`android_temp_file`、`create_zip_stream`、`android_document_picker` 和 `browser_download` 阶段，并记录菜谱数、图片总字节、ZIP 字节及耗时，不记录图片或菜谱正文。导出弹框显示当前处理阶段。
+- TDD：新增整包读取禁用测试、分块上限测试、分块失败回滚测试、流式导入测试、Android 原生追加写入契约测试；20MB 图片可生成并重新导入。使用未提交的 `caipin_photo/` 本机样本完成 206MB 图片流式压力测试，所有输出块均不超过 256KB。
+- 验证：73 项自动测试通过；Android Web 构建、Capacitor 同步、Gradle 单元测试及 `assembleDebug` 通过。
+- 隐私：ZIP 内容仍只在本机生成并由用户选择保存位置；API Key 和诊断日志仍不进入业务备份。
+- 产物：重新生成 `artifacts/zaofang-android-debug.apk`。
+- 下一步：在发生过闪退的 Android 真机上覆盖安装新 APK，分别验证 20MB、50MB 和 200MB 备份的保存、打开与重新导入，并在需要时通过阶段日志定位设备存储空间或系统文件提供器问题。

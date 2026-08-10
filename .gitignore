@@ -35,6 +35,7 @@ yarn-error.log*
 /tmp/
 /local-data/
 /test-results/
+/caipin_photo/
 
 # env files (can opt-in for committing if needed)
 .env*

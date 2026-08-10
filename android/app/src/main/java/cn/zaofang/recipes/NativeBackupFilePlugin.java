@@ -5,7 +5,6 @@ import android.content.Intent;
 import android.net.Uri;
 import android.provider.Settings;
 import android.util.Base64;
-import android.util.Base64InputStream;
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -13,12 +12,11 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 @CapacitorPlugin(name = "NativeBackupFile")
 public class NativeBackupFilePlugin extends Plugin {
@@ -27,35 +25,111 @@ public class NativeBackupFilePlugin extends Plugin {
     private String pendingTempPath;
     private String pendingFilename;
     private String pendingMimeType;
+    private String activeExportId;
+    private String activeTempPath;
+    private String activeFilename;
+    private String activeMimeType;
+    private long activeBytesWritten;
 
     @PluginMethod
-    public void saveZip(PluginCall call) {
-        String data = call.getString("data");
+    public void beginZip(PluginCall call) {
         String filename = call.getString("filename", "灶房菜谱备份.zip");
         String mimeType = call.getString("mimeType", MIME_ZIP);
-        if (data == null || data.length() == 0) {
-            call.reject("missing_backup_data", "VALIDATION");
+        if (pendingTempPath != null) {
+            call.reject("backup_picker_in_progress", "CONFLICT");
             return;
         }
         try {
-            pendingFilename = sanitizeFilename(filename);
-            pendingMimeType = mimeType == null || mimeType.length() == 0 ? MIME_ZIP : mimeType;
-            pendingTempPath = writeBackupToTempFile(data).getAbsolutePath();
-            call.getData().remove("data");
-            call.getData().put("tempPath", pendingTempPath);
-            call.getData().put("filename", pendingFilename);
-            call.getData().put("mimeType", pendingMimeType);
+            clearActive();
+            activeExportId = UUID.randomUUID().toString();
+            activeTempPath = createTempBackupFile().getAbsolutePath();
+            activeFilename = sanitizeFilename(filename);
+            activeMimeType = mimeType == null || mimeType.length() == 0 ? MIME_ZIP : mimeType;
+            activeBytesWritten = 0;
+            JSObject result = new JSObject();
+            result.put("exportId", activeExportId);
+            result.put("filename", activeFilename);
+            result.put("mimeType", activeMimeType);
+            call.resolve(result);
         } catch (Exception exception) {
-            clearPending();
+            clearActive();
             call.reject(safeMessage(exception), exception.getClass().getSimpleName(), exception);
+        }
+    }
+
+    @PluginMethod
+    public void appendZipChunk(PluginCall call) {
+        String exportId = call.getString("exportId");
+        String data = call.getString("data");
+        if (!isActiveExport(exportId)) {
+            call.reject("backup_export_not_active", "VALIDATION");
             return;
         }
+        if (data == null || data.length() == 0) {
+            call.reject("missing_backup_chunk", "VALIDATION");
+            return;
+        }
+        try {
+            byte[] decoded = Base64.decode(stripDataUrlPrefix(data), Base64.DEFAULT);
+            try (FileOutputStream output = new FileOutputStream(new File(activeTempPath), true)) {
+                output.write(decoded);
+                output.flush();
+            }
+            activeBytesWritten += decoded.length;
+            call.getData().remove("data");
+            JSObject result = new JSObject();
+            result.put("bytesWritten", activeBytesWritten);
+            call.resolve(result);
+        } catch (Exception exception) {
+            clearActive();
+            call.reject(safeMessage(exception), exception.getClass().getSimpleName(), exception);
+        }
+    }
+
+    @PluginMethod
+    public void finishZip(PluginCall call) {
+        String exportId = call.getString("exportId");
+        Long expectedBytes = call.getLong("expectedBytes");
+        if (!isActiveExport(exportId)) {
+            call.reject("backup_export_not_active", "VALIDATION");
+            return;
+        }
+        File tempFile = new File(activeTempPath);
+        if (!tempFile.exists() || tempFile.length() == 0) {
+            clearActive();
+            call.reject("temp_backup_file_empty", "STORAGE");
+            return;
+        }
+        if (expectedBytes != null && expectedBytes.longValue() != tempFile.length()) {
+            clearActive();
+            call.reject("backup_size_mismatch", "STORAGE");
+            return;
+        }
+
+        pendingTempPath = activeTempPath;
+        pendingFilename = activeFilename;
+        pendingMimeType = activeMimeType;
+        activeExportId = null;
+        activeTempPath = null;
+        activeFilename = null;
+        activeMimeType = null;
+        activeBytesWritten = 0;
+        call.getData().put("tempPath", pendingTempPath);
+        call.getData().put("filename", pendingFilename);
+        call.getData().put("mimeType", pendingMimeType);
 
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(pendingMimeType);
         intent.putExtra(Intent.EXTRA_TITLE, pendingFilename);
         startActivityForResult(call, intent, "saveZipResult");
+    }
+
+    @PluginMethod
+    public void abortZip(PluginCall call) {
+        String exportId = call.getString("exportId");
+        if (isActiveExport(exportId)) clearActive();
+        call.resolve();
     }
 
     @ActivityCallback
@@ -146,20 +220,27 @@ public class NativeBackupFilePlugin extends Plugin {
         pendingMimeType = null;
     }
 
-    private File writeBackupToTempFile(String data) throws Exception {
+    private void clearActive() {
+        if (activeTempPath != null) deleteQuietly(new File(activeTempPath));
+        activeExportId = null;
+        activeTempPath = null;
+        activeFilename = null;
+        activeMimeType = null;
+        activeBytesWritten = 0;
+    }
+
+    private boolean isActiveExport(String exportId) {
+        return exportId != null && exportId.equals(activeExportId) && activeTempPath != null;
+    }
+
+    private File createTempBackupFile() throws Exception {
         File directory = new File(getContext().getCacheDir(), "backup-export");
         if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("create_temp_dir_failed");
-        File file = File.createTempFile("zaofang-backup-", ".zip", directory);
-        String base64 = stripDataUrlPrefix(data);
-        try (
-            ByteArrayInputStream input = new ByteArrayInputStream(base64.getBytes(StandardCharsets.US_ASCII));
-            Base64InputStream decoded = new Base64InputStream(input, Base64.DEFAULT);
-            FileOutputStream output = new FileOutputStream(file)
-        ) {
-            copyStream(decoded, output);
+        File[] staleFiles = directory.listFiles((dir, name) -> name.startsWith("zaofang-backup-") && name.endsWith(".zip"));
+        if (staleFiles != null) {
+            for (File staleFile : staleFiles) deleteQuietly(staleFile);
         }
-        if (file.length() == 0) throw new IllegalStateException("temp_backup_file_empty");
-        return file;
+        return File.createTempFile("zaofang-backup-", ".zip", directory);
     }
 
     private void copyFileToStream(File file, OutputStream output) throws Exception {
