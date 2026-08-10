@@ -15,7 +15,7 @@ import type { AppSettings, Recipe } from "../app/lib/types.ts";
 
 const settings: AppSettings = {
   debugMode: true,
-  ai: { endpoint: "https://example.test", model: "vision", apiKey: "sk-super-secret", enabled: true, thinkingEnabled: false },
+  ai: { endpoint: "https://example.test", model: "vision", apiKey: "TEST_API_KEY_NOT_A_SECRET", enabled: true, thinkingEnabled: false },
   nutrition: { visibleNutrients: ["energyKcal", "proteinG", "fiberG"], estimatePeople: 3 },
 };
 
@@ -41,7 +41,7 @@ const sample: Recipe = {
 test("exports and imports recipes and images without secrets", async () => {
   const blob = await createBackup([sample], settings, []);
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  assert.equal(new TextDecoder().decode(bytes).includes("sk-super-secret"), false);
+  assert.equal(new TextDecoder().decode(bytes).includes("TEST_API_KEY_NOT_A_SECRET"), false);
   const file = new File([blob], "backup.zip", { type: "application/zip" });
   const parsed = await parseBackup(file);
   assert.equal(parsed.recipes[0].name, "测试菜");

@@ -22,6 +22,18 @@
 # misc
 .DS_Store
 *.pem
+*.p12
+*.pfx
+*.mobileprovision
+
+# signing keys and third-party service credentials
+*.jks
+*.keystore
+**/key.properties
+**/google-services.json
+**/GoogleService-Info.plist
+/.secrets/
+/credentials/
 
 # debug
 npm-debug.log*
@@ -31,14 +43,24 @@ yarn-error.log*
 *.log
 *.zip
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.db
+*.db-shm
+*.db-wal
 /tmp/
 /local-data/
+/user-data/
+/backups/
+/recipe-images/
+/image-work/
+/diagnostics/
 /test-results/
 /caipin_photo/
 
-# env files (can opt-in for committing if needed)
+# environment files and local model/API configuration
 .env*
+!.env.example
 
 # vercel
 .vercel
