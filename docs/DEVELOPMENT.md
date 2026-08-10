@@ -10,6 +10,18 @@
 - 将测试中的类密钥占位符改为明确的无效测试值，避免 GitHub 密钥扫描误报。
 - 确认 APK、Android SDK 本机路径和微信开发者私有配置均未进入 Git。
 
+## 2026-08-11 · GitHub 开源发布准备
+
+- 采用 MIT License，补充贡献指南、安全报告政策和无密钥 `.env.example`。
+- 重写 README，覆盖网站本地运行、Android APK 构建、AI 配置、数据备份、项目结构与隐私边界。
+- 将环境文档中的个人绝对路径替换为跨平台通用说明。
+- 增加 GitHub Actions：网站测试与构建、Android 调试 APK、微信小程序检查和标签触发的 Release APK。
+- 增加 Dependabot、Issue 模板和 Pull Request 模板，便于公开协作。
+- APK 仅作为 Actions Artifact 或 GitHub Release 附件发布，不进入 Git 历史。
+- 统一 npm 包名与 GitHub 仓库名为 `zaofang-local-recipes`，避免公开项目标识混用。
+- 安全：将 Next.js 从 16.2.6 升级到 16.3.0；`npm audit --omit=dev` 的生产依赖告警由 4 个高危降为 0。
+- 验证：网站 73 项测试、生产构建、微信小程序 23 项检查和 Android `assembleDebug` 均通过；发布快照未发现密钥、签名文件、本地数据库、日志、ZIP 或 APK 被 Git 跟踪。
+
 ## 提交记录
 
 - `chore(project): 初始化PWA与开发规范`：完成项目、Git、依赖、构建和文档基础。

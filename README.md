@@ -1,69 +1,138 @@
-# 灶房
+# 灶房（Zaofang）
 
-一个数据留在本机的中文菜谱 PWA。支持菜谱增删改查、按人数和餐次进行本地规则推荐、完整 ZIP 备份、离线安装、脱敏诊断日志，以及可关闭的远程图片解析。
+[![CI](https://github.com/Fuguidan/zaofang-local-recipes/actions/workflows/ci.yml/badge.svg)](https://github.com/Fuguidan/zaofang-local-recipes/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## 隐私边界
+一个本地优先、重视隐私的中文菜谱应用。支持在电脑浏览器运行，也可以通过 Capacitor 打包成 Android APK 安装到手机。
 
-- 菜谱、图片、标签、推荐历史、模型配置和诊断日志保存在浏览器 IndexedDB。
-- 不使用账号、云数据库、云同步或自动遥测。
-- 远程图片解析默认关闭。启用后只发送当前图片、补充文字和固定解析提示。
-- AI 生成必须在设置中开启，并由用户在菜谱编辑页点击“智能生成”才会调用。
-- API Key、诊断日志和错误堆栈不进入业务 ZIP 备份。
-- 浏览器本地保存的 API Key 不具备操作系统密钥链级别的保护。
+菜谱、图片、标签、推荐历史、模型配置和诊断日志默认保存在当前浏览器或 Android 应用的本地空间，不需要账号、云数据库或网站托管。
 
-## 本地运行
+## 功能
 
-需要 Node.js 22.13 或更高版本。
+- 菜谱新增、查看、修改、删除、搜索、分页和缩略图展示。
+- JPG、PNG、WebP、HEIC/HEIF 图片上传，以及裁剪、旋转、平移和缩放。
+- 按人数、早餐/午餐/晚餐、口味和标签进行本地规则推荐，默认推荐“人数 + 1”道菜。
+- 本地营养估算：热量、蛋白质、碳水、脂肪、膳食纤维和钠。
+- 本地 ZIP 导入导出、冲突处理和大图片流式备份。
+- 可选的 AI 文字生成、图片识别、思考开关和 Token 用量统计。
+- PWA 离线使用、脱敏诊断日志和 Android 原生文件导出。
+- `weixin/` 中同时提供微信小程序版本，主项目不依赖它运行。
+
+## 隐私与安全
+
+- 应用不会自动上传菜谱、图片、日志或备份。
+- AI 默认关闭，只有用户在设置中启用并主动点击生成时才会请求模型。
+- AI 请求只包含当前图片、菜名或补充说明，不会发送整个菜谱库。
+- API Key 由用户在应用设置中填写并保存在本机，不进入源码、APK、ZIP 业务备份或诊断日志。
+- `.env`、签名文件、本地数据库、用户图片、日志、ZIP、APK 和本机 SDK 配置均被 Git 忽略。
+- 浏览器中的 API Key 不是操作系统密钥链级别的安全存储，请使用权限和额度受限的个人密钥。
+
+安全问题请参阅 [SECURITY.md](SECURITY.md)，不要在公开 Issue 中粘贴密钥、私人菜谱、图片或诊断日志。
+
+## 环境要求
+
+- Node.js `22.13.0` 或更高版本
+- npm（随 Node.js 安装）
+- Android 打包额外需要 JDK 21、Android SDK Platform 36 和 Build Tools 36
+
+macOS、Windows、Linux 的环境说明见 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)。
+
+## 在电脑运行网站版
 
 ```bash
-npm install
+git clone https://github.com/Fuguidan/zaofang-local-recipes.git
+cd zaofang-local-recipes
+npm ci
 npm run dev
 ```
 
-构建与测试：
+根据终端提示打开本地地址，通常是 [http://localhost:3000](http://localhost:3000)。
+
+检查和构建：
 
 ```bash
 npm run typecheck
 npm run test
 npm run build
+npm run start
 ```
 
-模型接口可通过 `.env` 预填非密钥默认值：
+首次配置可复制无密钥示例：
 
 ```bash
-VITE_AI_ENDPOINT=https://example.com/v1/chat/completions
-VITE_AI_MODEL=your-vision-or-text-model
-VITE_AI_ENABLED=false
+cp .env.example .env.local
 ```
 
-API Key 不建议放入 `.env` 注入前端包或 APK，请在应用“设置与诊断”中手动填写。
+`.env` 只适合预填接口地址、模型名和 AI 默认开关。不要把 API Key 写入任何 `VITE_` 环境变量，因为它们会进入浏览器或 APK 前端包。
 
-使用 `npm run dev` 在 MacBook 本机测试 Web 端 AI 时，浏览器会请求同源的本机开发代理，再由本机开发服务器转发到模型接口，可避开常见 CORS 拦截。静态网页或非本机地址没有这个代理，若模型服务不允许浏览器跨域直连，仍可能出现 CORS 错误。
+本机执行 `npm run dev` 时，Web AI 请求会经过同源开发代理，以绕开常见浏览器 CORS 限制。不开启 AI 时，菜谱管理、推荐、营养计算和备份完全不需要模型接口。
 
-## Android APK
+## 构建 Android APK
 
-Android 版本使用 Capacitor 封装，页面资源直接包含在 APK 内，不依赖网站托管。菜谱和图片保存在应用自己的本地数据目录中。
-
-生成可侧载的调试 APK：
+先安装并配置 JDK 21 与 Android SDK，然后执行：
 
 ```bash
-export JAVA_HOME=/usr/local/opt/openjdk@21
-export ANDROID_HOME=/usr/local/share/android-commandlinetools
+npm ci
 npm run android:apk
 ```
 
-输出文件为 `android/app/build/outputs/apk/debug/app-debug.apk`。发送到 Android 手机后，允许当前文件管理器“安装未知应用”即可安装。卸载应用或清除应用数据会删除手机中的菜谱，操作前请先在“数据管家”导出 ZIP。
+APK 输出位置：
 
-完整环境安装、MacBook 启动、Android APK 打包和 iOS/Xcode 打包说明见 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)。
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
 
-## 使用流程
+把 APK 发送到 Android 手机，在系统设置中允许当前文件管理器或浏览器“安装未知应用”后即可安装。
 
-1. 在“我的菜谱”中添加、编辑或删除菜谱；支持 JPG、PNG、WebP、HEIC/HEIF。Android APK 会优先用原生能力把 HEIC 转为 JPEG，转换失败时仍保留原图并可保存。
-2. 需要 AI 时，先在“设置与诊断”打开“允许使用 AI 生成”并填写模型配置，再在添加菜谱时上传图片或填写菜名，点击“智能生成”。
-   设置页提供“测试文本连接”和“测试图片能力”；文本成功不代表模型一定支持图片。
-   MacBook 本机 Web 测试请通过 `npm run dev` 打开页面，以启用本机 AI 代理。
-3. 在“今日推荐”输入人数、餐次、口味和标签。默认推荐菜品数为人数加一。
-4. 在“数据管家”导出完整 ZIP；Android APK 会弹出系统文件选择器让你选择保存位置，换设备后选择同一 ZIP 即可恢复。
-5. 在“设置与诊断”主动开启调试模式、下载脱敏日志或配置支持图片输入的兼容模型接口。
+这是使用调试证书签名的 APK，适合个人使用、开发测试和小范围体验。长期分发或应用商店发布应使用由项目维护者自行保管的正式签名密钥；签名文件不得提交到 Git。
 
-详细开发进展见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+完整安装和打包步骤见 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)。
+
+## AI 配置
+
+应用使用 OpenAI-compatible Chat Completions 请求格式。设置页需要填写：
+
+- HTTPS 接口地址
+- 模型名称
+- API Key
+- “允许使用 AI 生成”开关
+
+文字连接成功不代表模型支持图片，请再运行“测试图片能力”。图片模型失败时仍可以使用“仅文字生成”，所有失败场景都会保留原始图片和文字。
+
+仓库不提供或共享模型 API Key，模型调用产生的费用由使用者自己的模型服务账户承担。
+
+## 本地数据与备份
+
+网站版使用 IndexedDB，Android 版使用 WebView 本地数据库及应用私有文件目录。不同浏览器、域名和设备之间的数据不会自动同步。
+
+卸载应用、清除浏览器网站数据或清除 Android 应用数据前，请先在“数据管家”导出 ZIP。业务备份不包含 API Key、诊断日志或错误堆栈。
+
+## 项目结构
+
+```text
+app/          网站主要界面和业务代码
+android/      Capacitor Android 原生工程
+capacitor/    Android 使用的静态 Web 入口
+public/       PWA 图标、清单和 Service Worker
+worker/       本地/可选托管环境的 AI 同源代理
+tests/        自动化测试
+docs/         环境、营养设计和开发记录
+weixin/       独立的微信小程序版本
+```
+
+## 参与开发
+
+欢迎提交 Issue 和 Pull Request。开始前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。提交前至少执行：
+
+```bash
+npm run test
+npm run build
+```
+
+## 下载版本
+
+源代码可以从仓库克隆。后续 APK 会通过 [GitHub Releases](https://github.com/Fuguidan/zaofang-local-recipes/releases) 提供，不把二进制文件提交到 Git 历史。
+
+## 许可证与数据来源
+
+项目代码采用 [MIT License](LICENSE)。本地营养数据由 USDA FoodData Central 公共数据整理而来，营养结果仅为估算值，不能替代医疗或专业营养建议。

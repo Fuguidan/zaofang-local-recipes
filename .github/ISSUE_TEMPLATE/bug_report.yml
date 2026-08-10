@@ -1,0 +1,47 @@
+name: 缺陷报告
+description: 报告可以稳定复现的问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 请勿提交 API Key、私人图片、菜谱 ZIP 或未经脱敏的完整日志。安全问题请使用 Security 私密报告。
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 使用平台
+      options:
+        - 网站版
+        - Android APK
+        - 微信小程序
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本或提交
+      placeholder: v0.1.0 或 commit SHA
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请使用不含私人数据的最小复现步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏诊断信息
+      description: 可填写错误编号、系统版本和模型失败类别，不要粘贴密钥或完整请求。

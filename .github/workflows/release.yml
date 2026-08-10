@@ -1,0 +1,35 @@
+name: Android release artifact
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+      - run: npm run test
+      - run: npm run android:apk
+      - name: Prepare APK and checksum
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk "zaofang-${GITHUB_REF_NAME}-debug.apk"
+          shasum -a 256 "zaofang-${GITHUB_REF_NAME}-debug.apk" > "zaofang-${GITHUB_REF_NAME}-debug.apk.sha256"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" "zaofang-${GITHUB_REF_NAME}-debug.apk" "zaofang-${GITHUB_REF_NAME}-debug.apk.sha256" --generate-notes --title "灶房 ${GITHUB_REF_NAME}"
