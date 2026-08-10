@@ -1,0 +1,12 @@
+.two-columns { display: grid; gap: 18rpx; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.choice-grid { display: grid; gap: 16rpx; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.choice-grid label { display: flex; align-items: center; font-size: 25rpx; }
+.result-heading { display: flex; gap: 20rpx; align-items: flex-start; justify-content: space-between; margin: 40rpx 4rpx 20rpx; }
+.result-heading .section-title { margin-bottom: 8rpx; }
+.result-card { display: flex; overflow: hidden; padding: 0; }
+.result-image { width: 240rpx; min-height: 280rpx; flex: 0 0 240rpx; }
+.result-body { min-width: 0; flex: 1; padding: 24rpx; }
+.result-name { display: block; margin-bottom: 10rpx; font-family: serif; font-size: 34rpx; font-weight: 700; }
+.nutrition-row { display: flex; flex-wrap: wrap; gap: 8rpx; margin: 18rpx 0; }
+.nutrition-chip { padding: 8rpx 12rpx; border-radius: 14rpx; background: #edf3ea; color: #416348; font-size: 20rpx; }
+@media (max-width: 360px) { .two-columns { grid-template-columns: 1fr; } .result-card { display: block; } .result-image { width: 100%; height: 340rpx; } }

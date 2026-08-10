@@ -1,0 +1,15 @@
+.hero-image, .hero-placeholder { width: 100%; height: 620rpx; border-radius: 34rpx; }
+.hero-placeholder { display: flex; align-items: center; justify-content: center; background: #273129; color: #e89169; font-family: serif; font-size: 120rpx; }
+.intro-card { margin-top: -52rpx; position: relative; }
+.meta { display: flex; gap: 20rpx; color: var(--green-deep); font-size: 24rpx; font-weight: 650; }
+.recipe-title { display: block; margin: 18rpx 0; font-family: serif; font-size: 52rpx; font-weight: 700; }
+.description { display: block; margin-bottom: 22rpx; color: var(--muted); line-height: 1.65; }
+.nutrition-grid { display: flex; flex-wrap: wrap; gap: 14rpx; }
+.nutrition-item { min-width: 145rpx; flex: 1; padding: 18rpx; border-radius: 20rpx; background: #edf3ea; color: #416348; font-size: 23rpx; }
+.nutrition-value { display: block; margin-top: 8rpx; font-size: 29rpx; font-weight: 750; }
+.ingredient { display: flex; gap: 20rpx; align-items: flex-start; justify-content: space-between; padding: 20rpx 0; border-bottom: 1rpx solid var(--line); font-size: 26rpx; }
+.ingredient:last-child { border-bottom: 0; }
+.ingredient-name { display: block; font-size: 29rpx; font-weight: 700; }
+.food-name { display: block; max-width: 420rpx; margin-top: 7rpx; overflow: hidden; color: var(--muted); font-size: 21rpx; text-overflow: ellipsis; white-space: nowrap; }
+.step { display: flex; gap: 20rpx; margin-bottom: 22rpx; line-height: 1.65; }
+.step-number { flex: 0 0 54rpx; width: 54rpx; height: 54rpx; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; line-height: 54rpx; text-align: center; }

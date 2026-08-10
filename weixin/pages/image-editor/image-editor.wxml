@@ -1,0 +1,10 @@
+<view class="editor-page">
+  <view class="editor-copy"><text class="eyebrow">本机图片编辑</text><text class="editor-title">拖动、缩放与旋转</text><text class="editor-tip">编辑框里看到的方形画面会直接保存为封面，其他页面保持一致。</text></view>
+  <view class="canvas-shell"><canvas id="cropCanvas" type="2d" class="crop-canvas" bindtouchstart="touchStart" catchtouchmove="touchMove" /></view>
+  <view class="controls">
+    <view class="zoom-row"><text>缩放 50%</text><slider class="zoom-slider" min="50" max="300" step="1" value="{{zoomPercent}}" activeColor="#cc4e27" bindchanging="zoomChange" bindchange="zoomChange" /><text>300%</text></view>
+    <text class="zoom-value">当前 {{zoomPercent}}% · 旋转 {{rotation}}°</text>
+    <view class="button-row"><button class="button-ghost" data-degrees="-90" bindtap="rotate">↶ 左转</button><button class="button-ghost" data-degrees="90" bindtap="rotate">右转 ↷</button><button class="button-secondary" bindtap="reset">重置</button></view>
+  </view>
+  <view class="bottom-actions"><button class="button-ghost" bindtap="cancel">取消</button><button class="button-primary" disabled="{{!ready || saving}}" bindtap="confirm">{{saving ? '正在保存…' : '确定使用'}}</button></view>
+</view>

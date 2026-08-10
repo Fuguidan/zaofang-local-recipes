@@ -1,0 +1,30 @@
+<view class="page">
+  <view class="hero"><text class="eyebrow">本地优先 · 由你决定</text><text class="title">设置与诊断</text><text class="subtitle">模型密钥只保存在当前微信本地，不进入业务 ZIP 或诊断日志。</text></view>
+
+  <view class="card">
+    <view class="switch-row"><view><text class="switch-title">允许使用 AI 生成</text><text class="switch-copy">关闭后，菜谱录入不会发起任何模型请求。</text></view><switch checked="{{draft.ai.enabled}}" color="#cc4e27" bindchange="aiEnabledChange" /></view>
+    <view class="divider" />
+    <label class="field"><text class="field-label">接口地址</text><input class="input" value="{{draft.ai.endpoint}}" placeholder="https://…/v1/chat/completions" data-field="endpoint" bindinput="inputAI" /></label>
+    <label class="field"><text class="field-label">模型名</text><input class="input" value="{{draft.ai.model}}" placeholder="支持图片时请选择视觉模型" data-field="model" bindinput="inputAI" /></label>
+    <label class="field"><text class="field-label">API Key</text><input class="input" password value="{{draft.ai.apiKey}}" placeholder="只保存在当前微信本地" data-field="apiKey" bindinput="inputAI" /></label>
+    <view wx:if="{{thinkingSupported}}" class="switch-row"><view><text class="switch-title">默认开启深度思考</text><text class="switch-copy">生成页仍可为单次请求切换。</text></view><switch checked="{{draft.ai.thinkingEnabled}}" color="#456b50" bindchange="thinkingChange" /></view>
+    <view class="notice">小程序请求第三方模型前，需要在微信公众平台“开发管理 → 服务器域名”中把接口 HTTPS 域名加入 request 合法域名。开发者工具里的“不校验合法域名”只用于本机调试。</view>
+    <view class="button-row"><button class="button-ghost" disabled="{{testing}}" data-kind="text" bindtap="runTest">{{testing === 'text' ? '测试中…' : '测试文本连接'}}</button><button class="button-secondary" disabled="{{testing}}" data-kind="vision" bindtap="runTest">{{testing === 'vision' ? '测试中…' : '测试图片能力'}}</button></view>
+    <view wx:if="{{testNotice}}" class="notice">{{testNotice}}</view>
+  </view>
+
+  <view class="card">
+    <text class="section-title">营养与估重</text>
+    <label class="field"><text class="field-label">AI 食材重量估算人数</text><input class="input" type="number" min="1" max="20" value="{{draft.nutrition.estimatePeople}}" bindinput="peopleInput" /><text class="help">默认按两人一餐估算，用户可在菜谱中修正每项克数。</text></label>
+    <label class="field"><text class="field-label">菜谱中展示的指标</text><checkbox-group class="nutrient-grid" bindchange="nutrientsChange"><label wx:for="{{nutrientOptions}}" wx:key="key"><checkbox value="{{item.key}}" checked="{{item.checked}}" color="#cc4e27" /><view><text>{{item.label}}</text><text class="unit">{{item.unit}}</text></view></label></checkbox-group></label>
+  </view>
+
+  <view class="card">
+    <text class="section-title">本机诊断</text>
+    <view class="switch-row"><view><text class="switch-title">调试模式</text><text class="switch-copy">开启后记录更详细的脱敏日志，最多保留 500 条。</text></view><switch checked="{{draft.debugMode}}" color="#456b50" bindchange="debugChange" /></view>
+    <view class="privacy-list"><text>不会记录 API Key</text><text>不会记录图片或 ZIP 内容</text><text>不会记录完整菜谱正文或模型响应</text></view>
+    <button class="button-ghost" bindtap="openLogs">查看诊断与 Token 用量</button>
+  </view>
+
+  <button class="button-primary save-button" bindtap="saveSettings">保存设置</button>
+</view>

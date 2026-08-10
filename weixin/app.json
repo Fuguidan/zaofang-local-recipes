@@ -1,0 +1,42 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/recommend/recommend",
+    "pages/backup/backup",
+    "pages/settings/settings",
+    "pages/editor/editor",
+    "pages/detail/detail",
+    "pages/image-editor/image-editor",
+    "pages/logs/logs"
+  ],
+  "subpackages": [
+    {
+      "root": "nutrition",
+      "name": "nutrition",
+      "pages": ["pages/search/search"]
+    }
+  ],
+  "window": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "灶房",
+    "navigationBarBackgroundColor": "#242923",
+    "backgroundColor": "#f7f3ec",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#7d7a72",
+    "selectedColor": "#cc4e27",
+    "backgroundColor": "#fffdf8",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "我的菜谱" },
+      { "pagePath": "pages/recommend/recommend", "text": "智能推荐" },
+      { "pagePath": "pages/backup/backup", "text": "数据管理" },
+      { "pagePath": "pages/settings/settings", "text": "设置诊断" }
+    ]
+  },
+  "style": "v2",
+  "componentFramework": "glass-easel",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

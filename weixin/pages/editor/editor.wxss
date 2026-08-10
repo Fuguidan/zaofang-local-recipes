@@ -1,0 +1,22 @@
+.image-box { overflow: hidden; width: 100%; height: 500rpx; border: 2rpx dashed #cfc9bd; border-radius: 28rpx; background: #f5f1e9; }
+.preview-image { width: 100%; height: 100%; }
+.image-empty { display: flex; height: 100%; flex-direction: column; gap: 14rpx; align-items: center; justify-content: center; }
+.image-actions { margin-top: 18rpx; }
+.ai-panel { margin-top: 26rpx; padding: 24rpx; border-radius: 24rpx; background: #e6efe4; }
+.ai-title { display: block; font-weight: 750; }
+.ai-subtitle { display: block; margin: 8rpx 0 20rpx; color: var(--muted); font-size: 24rpx; }
+.thinking-switch { display: flex; margin-bottom: 18rpx; padding: 6rpx; border-radius: 999rpx; background: rgba(255,255,255,.65); }
+.thinking-button { flex: 1; height: 62rpx; border-radius: 999rpx; background: transparent; font-size: 24rpx; line-height: 62rpx; }
+.thinking-button.active { background: #fff; color: #2f5c3b; box-shadow: 0 4rpx 10rpx rgba(0,0,0,.05); }
+.two-columns, .triple-columns { display: grid; gap: 16rpx; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.triple-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 14rpx; }
+.choice-grid { display: grid; gap: 16rpx; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.choice-grid label { display: flex; align-items: center; gap: 4rpx; font-size: 25rpx; }
+.ingredient-editor, .step-editor { margin-bottom: 24rpx; padding: 22rpx; border: 1rpx solid var(--line); border-radius: 22rpx; background: #fbfaf6; }
+.item-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; font-weight: 700; }
+.mini-actions { display: flex; gap: 8rpx; }
+.mini-actions button { min-width: 50rpx; height: 50rpx; padding: 0 12rpx; border-radius: 999rpx; background: #eee8df; color: #6d655d; font-size: 21rpx; line-height: 50rpx; }
+.food-match { display: flex; gap: 12rpx; align-items: center; justify-content: space-between; margin-top: 14rpx; color: var(--muted); font-size: 21rpx; }
+.food-match text { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-textarea { min-height: 140rpx; }
+@media (max-width: 360px) { .choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .triple-columns { grid-template-columns: 1fr; } }

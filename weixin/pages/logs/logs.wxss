@@ -1,0 +1,24 @@
+.period-tabs, .filter-tabs { display: flex; flex-wrap: wrap; gap: 8rpx; padding: 6rpx; border-radius: 999rpx; background: #eee8df; }
+.tab { min-width: 90rpx; height: 58rpx; padding: 0 14rpx; border-radius: 999rpx; background: transparent; font-size: 22rpx; line-height: 58rpx; }
+.tab.active { background: #fff; color: #b64122; }
+.token-grid { display: grid; gap: 12rpx; margin: 24rpx 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.token-grid view { padding: 18rpx; border-radius: 18rpx; background: #edf3ea; color: var(--green-deep); }
+.token-grid text { display: block; font-size: 22rpx; }
+.token-value { display: block; margin-top: 6rpx; font-size: 34rpx; font-weight: 750; }
+.chart-title { display: block; margin: 28rpx 0 16rpx; font-weight: 700; }
+.dish-row { margin-bottom: 16rpx; }
+.dish-label { display: flex; justify-content: space-between; margin-bottom: 7rpx; font-size: 22rpx; }
+.bar-track { overflow: hidden; height: 14rpx; border-radius: 999rpx; background: #eee8df; }
+.bar { height: 100%; border-radius: 999rpx; background: var(--accent); }
+.day-chart { display: flex; height: 220rpx; gap: 8rpx; align-items: flex-end; margin-top: 28rpx; padding-top: 20rpx; border-bottom: 1rpx solid var(--line); }
+.day-column { display: flex; height: 100%; min-width: 30rpx; flex: 1; flex-direction: column; align-items: center; justify-content: flex-end; }
+.day-bar { width: 65%; min-height: 8rpx; border-radius: 8rpx 8rpx 0 0; background: var(--green-deep); }
+.day-column text { margin-top: 8rpx; color: var(--muted); font-size: 16rpx; writing-mode: vertical-rl; }
+.log-heading { display: flex; flex-wrap: wrap; gap: 20rpx; align-items: flex-start; justify-content: space-between; }
+.log-row { padding: 24rpx 0; border-top: 1rpx solid var(--line); }
+.log-top { display: flex; gap: 14rpx; align-items: center; }
+.level { min-width: 80rpx; font-size: 20rpx; font-weight: 750; text-transform: uppercase; }
+.level.info { color: var(--green-deep); } .level.warn { color: #9b7312; } .level.error { color: #a4312a; }
+.event { font-weight: 700; }
+.log-meta, .log-message, .error-code { display: block; margin-top: 10rpx; color: var(--muted); font-size: 21rpx; line-height: 1.45; word-break: break-all; }
+.error-code { color: #a4312a; }

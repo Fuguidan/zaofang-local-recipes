@@ -1,0 +1,17 @@
+<view class="page">
+  <view class="hero"><text class="eyebrow">本机诊断</text><text class="title">日志与 Token 用量</text><text class="subtitle">所有数据仅保存在当前微信；下载和分享必须由你主动触发。</text></view>
+
+  <view class="card">
+    <view class="period-tabs"><button class="tab {{period === 'session' ? 'active' : ''}}" data-value="session" bindtap="setPeriod">本次打开</button><button class="tab {{period === 'week' ? 'active' : ''}}" data-value="week" bindtap="setPeriod">近7天</button><button class="tab {{period === 'month' ? 'active' : ''}}" data-value="month" bindtap="setPeriod">本月</button><button class="tab {{period === 'all' ? 'active' : ''}}" data-value="all" bindtap="setPeriod">全部</button></view>
+    <view class="token-grid"><view><text>生成次数</text><text class="token-value">{{analytics.requestCount || 0}}</text></view><view><text>输入</text><text class="token-value">{{analytics.inputTokens || 0}}</text></view><view><text>回答</text><text class="token-value">{{analytics.answerTokens || 0}}</text></view><view><text>思考</text><text class="token-value">{{analytics.reasoningTokens || 0}}</text></view><view><text>总 Token</text><text class="token-value">{{analytics.totalTokens || 0}}</text></view></view>
+    <view wx:if="{{dishes.length}}" class="chart"><text class="chart-title">按菜名</text><view class="dish-row" wx:for="{{dishes}}" wx:key="name"><view class="dish-label"><text>{{item.name}}</text><text>{{item.totalTokens}}</text></view><view class="bar-track"><view class="bar" style="width: {{item.width}}%;" /></view></view></view>
+    <view wx:if="{{days.length}}" class="day-chart"><view class="day-column" wx:for="{{days}}" wx:key="date"><view class="day-bar" style="height: {{item.height}}%;" /><text>{{item.label}}</text></view></view>
+  </view>
+
+  <view class="card">
+    <view class="log-heading"><view><text class="eyebrow">最近 {{logs.length}} 条</text><text class="section-title">诊断记录</text></view><view class="filter-tabs"><button class="tab {{filter === 'all' ? 'active' : ''}}" data-value="all" bindtap="setFilter">全部</button><button class="tab {{filter === 'warn' ? 'active' : ''}}" data-value="warn" bindtap="setFilter">警告</button><button class="tab {{filter === 'error' ? 'active' : ''}}" data-value="error" bindtap="setFilter">错误</button></view></view>
+    <view wx:if="{{!visibleLogs.length}}" class="empty">当前筛选条件下没有日志。</view>
+    <view class="log-row" wx:for="{{visibleLogs}}" wx:key="id"><view class="log-top"><text class="level {{item.level}}">{{item.level}}</text><text class="event">{{item.module}} · {{item.event}}</text></view><text class="log-meta">{{item.timestamp}} · 操作 {{item.operationId}}</text><text wx:if="{{item.message}}" class="log-message">{{item.message}}</text><text wx:if="{{item.errorCode}}" class="error-code">{{item.errorCode}}</text></view>
+    <view class="button-row"><button class="button-ghost" bindtap="copyLogs">复制当前日志</button><button class="button-secondary" bindtap="exportLogs">下载脱敏日志</button><button class="button-danger" bindtap="clearLogs">清空日志</button></view>
+  </view>
+</view>

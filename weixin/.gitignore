@@ -1,0 +1,10 @@
+# 微信开发者工具为每位开发者生成的本机偏好
+project.private.config.json
+
+# 本机测试与临时产物
+node_modules/
+miniprogram_npm/
+*.log
+*.zip
+*.heic
+*.heif

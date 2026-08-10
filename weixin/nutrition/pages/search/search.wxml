@@ -1,0 +1,10 @@
+<view class="page">
+  <view class="hero"><text class="eyebrow">离线营养数据</text><text class="title">搜索标准食品</text><text class="subtitle">本机内置 {{count}} 条 USDA 食品记录（{{version}}），不会发送食材到网络。</text></view>
+  <view class="card search-card"><input class="input" value="{{query}}" placeholder="输入中文食材或英文食品名" focus bindinput="onInput" /></view>
+  <view wx:if="{{!results.length}}" class="card empty">没有找到匹配项。可尝试更通用的名称，例如“鸡胸肉”“rice”或“tomato”。</view>
+  <view class="food-card card" wx:for="{{results}}" wx:key="id" data-index="{{index}}" bindtap="selectFood">
+    <text class="food-title">{{item.displayName}}</text>
+    <text class="food-meta">{{item.nutrientText}}</text>
+    <text class="food-source">{{item.source}}</text>
+  </view>
+</view>

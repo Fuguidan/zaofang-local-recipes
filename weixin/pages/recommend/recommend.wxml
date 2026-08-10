@@ -1,0 +1,29 @@
+<view class="page">
+  <view class="hero"><text class="eyebrow">本地规则 · 断网可用</text><text class="title">这一餐吃什么？</text><text class="subtitle">按人数推荐“人数＋1”道菜，不调整食材份数。</text></view>
+
+  <view class="card">
+    <text class="section-title">推荐条件</text>
+    <view class="two-columns">
+      <label class="field"><text class="field-label">用餐人数</text><input class="input" type="number" value="{{people}}" bindinput="peopleInput" /></label>
+      <label class="field"><text class="field-label">餐次</text><picker range="{{meals}}" range-key="label" value="{{mealIndex}}" bindchange="mealChange"><view class="picker-box">{{meals[mealIndex].label}}</view></picker></label>
+    </view>
+    <label class="field"><text class="field-label">口味偏好</text><checkbox-group class="choice-grid" bindchange="flavorChange"><label wx:for="{{flavors}}" wx:key="value"><checkbox value="{{item.value}}" checked="{{item.checked}}" color="#cc4e27" />{{item.value}}</label></checkbox-group></label>
+    <label class="field"><text class="field-label">可选标签</text><input class="input" value="{{tagsText}}" placeholder="例如：快手菜，健身餐" bindinput="tagsInput" /></label>
+    <button class="button-primary" bindtap="generate">推荐 {{people + 1}} 道菜</button>
+    <view class="notice" wx:if="{{recipeCount === 0}}">菜谱库为空，请先录入菜谱。推荐完全在本机执行。</view>
+  </view>
+
+  <view wx:if="{{result}}">
+    <view class="result-heading"><view><text class="section-title">本餐菜单</text><text class="muted">{{result.reason}}</text></view><button class="button-ghost button-small" data-preserve="true" bindtap="generate">整组重推</button></view>
+    <view class="notice" wx:if="{{result.shortage}}">目标 {{result.targetCount}} 道，目前只有 {{selected.length}} 道符合条件。</view>
+    <view class="result-card card" wx:for="{{selected}}" wx:key="id">
+      <image wx:if="{{item.imagePath}}" class="result-image" src="{{item.imagePath}}" mode="aspectFill" data-id="{{item.id}}" bindtap="openRecipe" />
+      <view class="result-body">
+        <text class="result-name" data-id="{{item.id}}" bindtap="openRecipe">{{item.name || '待完善菜谱'}}</text>
+        <text class="muted">{{item.dietType}} · {{item.duration}} 分钟</text>
+        <view class="nutrition-row"><text class="nutrition-chip" wx:for="{{item.nutritionChips}}" wx:key="key" wx:for-item="nutrient">{{nutrient.label}} {{nutrient.value}}</text></view>
+        <view class="button-row"><button class="button-ghost button-small" data-id="{{item.id}}" bindtap="toggleFixed">{{item.fixed ? '取消固定' : '固定菜品'}}</button><button class="button-secondary button-small" data-id="{{item.id}}" bindtap="replaceRecipe">换一道</button></view>
+      </view>
+    </view>
+  </view>
+</view>

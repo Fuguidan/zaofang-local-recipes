@@ -1,0 +1,10 @@
+.switch-row { display: flex; gap: 24rpx; align-items: center; justify-content: space-between; }
+.switch-row > view { min-width: 0; flex: 1; }
+.switch-title { display: block; font-size: 29rpx; font-weight: 700; }
+.switch-copy, .help { display: block; margin-top: 8rpx; color: var(--muted); font-size: 23rpx; line-height: 1.5; }
+.nutrient-grid { display: grid; gap: 14rpx; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.nutrient-grid label { display: flex; gap: 8rpx; align-items: center; padding: 18rpx; border-radius: 18rpx; background: #f4f0e9; }
+.unit { display: block; color: var(--muted); font-size: 20rpx; }
+.privacy-list { display: flex; flex-direction: column; gap: 12rpx; margin: 20rpx 0; color: var(--muted); font-size: 24rpx; }
+.privacy-list text::before { content: '✓ '; color: var(--green-deep); }
+.save-button { width: 100%; margin-bottom: calc(20rpx + env(safe-area-inset-bottom)); }

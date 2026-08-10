@@ -1,0 +1,5 @@
+.search-card { position: sticky; z-index: 2; top: 0; }
+.food-card { padding: 24rpx; }
+.food-title { display: block; font-size: 27rpx; font-weight: 700; line-height: 1.45; }
+.food-meta { display: block; margin-top: 12rpx; color: var(--green-deep); font-size: 24rpx; }
+.food-source { display: block; margin-top: 8rpx; color: var(--muted); font-size: 20rpx; }

@@ -1,0 +1,54 @@
+<view class="page">
+  <view class="hero">
+    <text class="eyebrow">私人菜谱库 · 仅此设备</text>
+    <text class="title">今天想做什么菜？</text>
+    <text class="subtitle">收好家里的味道，也为下一餐留一点灵感。</text>
+  </view>
+
+  <button class="button-primary add-button" bindtap="addRecipe">＋ 添加菜谱</button>
+
+  <view class="toolbar card">
+    <input class="search-input" placeholder="搜索菜名、食材或标签" value="{{search}}" bindinput="onSearch" />
+    <view class="mode-switch">
+      <button class="mode-button {{mode === 'list' ? 'active' : ''}}" bindtap="setListMode">列表</button>
+      <button class="mode-button {{mode === 'tiles' ? 'active' : ''}}" bindtap="setTileMode">平铺</button>
+    </view>
+  </view>
+
+  <view class="summary-row">
+    <text>共 {{recipes.length}} 道菜谱</text>
+    <text>{{rangeText}}</text>
+  </view>
+
+  <view wx:if="{{!visibleRecipes.length}}" class="card empty">还没有符合条件的菜谱。\n点击“添加菜谱”开始录入。</view>
+
+  <view wx:if="{{mode === 'list'}}" class="recipe-list">
+    <view class="recipe-card card" wx:for="{{visibleRecipes}}" wx:key="id" data-id="{{item.id}}" bindtap="openRecipe">
+      <image wx:if="{{item.imagePath}}" class="recipe-cover" src="{{item.imagePath}}" mode="aspectFill" />
+      <view wx:else class="recipe-placeholder">灶</view>
+      <view class="recipe-body">
+        <view class="recipe-meta"><text>{{item.dietType}}</text><text>{{item.duration}} 分钟</text><text wx:if="{{item.incomplete}}" class="draft">待完善</text></view>
+        <text class="recipe-name">{{item.displayName}}</text>
+        <text class="recipe-description">{{item.description || '还没有补充说明'}}</text>
+        <view class="nutrition-row" wx:if="{{item.nutritionChips.length}}">
+          <view class="nutrition-chip" wx:for="{{item.nutritionChips}}" wx:key="key" wx:for-item="nutrient"><text>{{nutrient.label}}</text><text class="nutrition-value">{{nutrient.value}}</text></view>
+        </view>
+        <view class="chip-row"><text class="chip" wx:for="{{item.tagPreview}}" wx:key="*this">#{{item}}</text></view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:else class="tile-grid">
+    <view class="tile-card" wx:for="{{visibleRecipes}}" wx:key="id" data-id="{{item.id}}" bindtap="openRecipe">
+      <image wx:if="{{item.imagePath}}" class="tile-image" src="{{item.imagePath}}" mode="aspectFill" />
+      <view wx:else class="tile-placeholder">灶</view>
+      <view class="tile-body"><text class="tile-name">{{item.displayName}}</text><text class="tile-meta">{{item.dietType}} · {{item.duration}} 分钟</text></view>
+    </view>
+  </view>
+
+  <view class="pagination" wx:if="{{recipes.length}}">
+    <button class="button-ghost button-small" disabled="{{page <= 1}}" bindtap="previousPage">上一页</button>
+    <text>第 {{page}} / {{totalPages}} 页</text>
+    <button class="button-ghost button-small" disabled="{{page >= totalPages}}" bindtap="nextPage">下一页</button>
+  </view>
+</view>
