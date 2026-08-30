@@ -18,7 +18,7 @@ import type {
 import { clearBusinessData, historyStore, logStore, recipeStore, settingsStore } from "../lib/storage";
 import { AppError, toAppError } from "../lib/errors";
 import { logger } from "../lib/logger";
-import { recommendRecipes } from "../lib/recommendation";
+import { recommendRecipes, singleReplacementPlan } from "../lib/recommendation";
 import { createBackup, parseBackup, streamBackup } from "../lib/backup";
 import { AIRequestError, formatRecipeTokenUsageLog, generateRecipeDraft, normalizeAIConfig, resolveAIRequestTarget, supportsThinkingToggle, testAIVisionCapability } from "../lib/ai";
 import { isAiSupportedImage, isHeicImage, normalizeRecipeImageFile } from "../lib/images";
@@ -912,20 +912,30 @@ function RecommendView({
     [recipes],
   );
 
-  async function run(nextSalt = Math.random(), nextFixed = fixedIds) {
+  async function run({
+    nextSalt = Math.random(),
+    selectionFixedIds = fixedIds,
+    persistentFixedIds = fixedIds,
+    avoidIds = [],
+  }: {
+    nextSalt?: number;
+    selectionFixedIds?: string[];
+    persistentFixedIds?: string[];
+    avoidIds?: string[];
+  } = {}) {
     const operationId = crypto.randomUUID();
     const started = performance.now();
     try {
-      const next = recommendRecipes(recipes, { people, meal, flavors, tags }, history, nextFixed, nextSalt);
+      const next = recommendRecipes(recipes, { people, meal, flavors, tags }, history, selectionFixedIds, nextSalt, avoidIds);
       setSalt(nextSalt);
-      setFixedIds(nextFixed);
+      setFixedIds(persistentFixedIds);
       setResult(next);
       const entry: RecommendationHistory = { id: crypto.randomUUID(), recipeIds: next.recipes.map((item) => item.id), meal, createdAt: new Date().toISOString() };
       await onHistory(entry);
       await logger.info("recommendation", "generated", operationId, {
         result: "success",
         durationMs: Math.round(performance.now() - started),
-        message: `candidates=${recipes.length};selected=${next.recipes.length}`,
+        message: `candidates=${recipes.length};selected=${next.recipes.length};avoided=${avoidIds.length};replaced=${avoidIds.filter((id) => !next.recipes.some((item) => item.id === id)).length}`,
       });
     } catch (caught) {
       const error = toAppError(caught, "RECOMMENDATION");
@@ -934,8 +944,13 @@ function RecommendView({
   }
 
   function replaceRecipe(id: string) {
-    const keep = result?.recipes.filter((recipe) => recipe.id !== id).map((recipe) => recipe.id) || [];
-    void run(Math.random(), keep);
+    const plan = singleReplacementPlan(result?.recipes.map((recipe) => recipe.id) || [], fixedIds, id);
+    void run(plan);
+  }
+
+  function rerollGroup() {
+    const previousNonFixed = result?.recipes.filter((recipe) => !fixedIds.includes(recipe.id)).map((recipe) => recipe.id) || [];
+    void run({ avoidIds: previousNonFixed });
   }
 
   return (
@@ -947,14 +962,14 @@ function RecommendView({
           <ChoiceGroup title="餐次" options={MEALS.map((item) => item.value)} selected={[meal]} label={mealLabel} onChange={(items) => setMeal((items.at(-1) || "dinner") as MealType)} />
           <ChoiceGroup title="想吃的口味（可多选）" options={FLAVORS} selected={flavors} onChange={(items) => setFlavors(items as Flavor[])} />
           <ChoiceGroup title="偏好标签（可多选）" options={availableTags} selected={tags} onChange={setTags} />
-          <button className="button-primary recommend-button" onClick={() => void run()}>生成本餐推荐 <span>→</span></button>
+          <button className="button-primary recommend-button" onClick={rerollGroup}>生成本餐推荐 <span>→</span></button>
         </div>
         <div className="recommend-result">
           {!result ? (
             <div className="recommend-placeholder"><span>荐</span><h2>今晚的菜单，交给本地菜谱库</h2><p>选择左侧条件后生成推荐。你的偏好不会发送到任何服务器。</p></div>
           ) : (
             <>
-              <div className="result-heading"><div><span className="eyebrow">本餐建议 · {result.recipes.length} 道</span><h2>{people} 人的{mealLabel(meal)}菜单</h2><p>{result.reason}</p></div><button className="button-secondary" onClick={() => void run()}>整组重选</button></div>
+              <div className="result-heading"><div><span className="eyebrow">本餐建议 · {result.recipes.length} 道</span><h2>{people} 人的{mealLabel(meal)}菜单</h2><p>{result.reason}</p></div><button className="button-secondary" onClick={rerollGroup}>整组重选</button></div>
               <div className="recommend-cards">
                 {result.recipes.map((recipe, index) => {
                   const fixed = fixedIds.includes(recipe.id);

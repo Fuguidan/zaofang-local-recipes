@@ -36,6 +36,17 @@ test('recommends people plus one dishes and keeps fixed dishes', () => {
   assert.equal(new Set(result.recipes.map((item) => item.id)).size, 3)
 })
 
+test('varies equal candidates and avoids the previous group when possible', () => {
+  const candidates = Array.from({ length: 7 }, (_, index) => ({ id: `dish-${index}`, meals: ['dinner'], flavors: ['清淡'], tags: [], incomplete: false }))
+  const first = recommendRecipes(candidates, { people: 2, meal: 'dinner', flavors: [], tags: [] }, [], [], 0.11)
+  const second = recommendRecipes(candidates, { people: 2, meal: 'dinner', flavors: [], tags: [] }, [], [], 0.83)
+  assert.notDeepEqual(first.recipes.map((item) => item.id), second.recipes.map((item) => item.id))
+
+  const previousIds = ['dish-0', 'dish-1', 'dish-2']
+  const replacement = recommendRecipes(candidates, { people: 2, meal: 'dinner', flavors: [], tags: [] }, [], [], 0.4, previousIds)
+  assert.equal(replacement.recipes.some((item) => previousIds.includes(item.id)), false)
+})
+
 test('matches common Chinese foods and calculates six local nutrients', () => {
   const chicken = suggestIngredientNutrition({ name: '鸡胸肉', amount: '200', unit: '克' })
   const rice = suggestIngredientNutrition({ name: '米饭', grams: 150, amount: '', unit: '' })

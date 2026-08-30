@@ -37,10 +37,11 @@ Page({
   generate(event) {
     const preserveFixed = event && event.currentTarget.dataset.preserve === 'true'
     const fixedIds = preserveFixed ? this.data.fixedIds : []
-    this.runRecommendation(fixedIds)
+    const avoidIds = preserveFixed ? this.data.selected.filter((item) => !fixedIds.includes(item.id)).map((item) => item.id) : []
+    this.runRecommendation(fixedIds, avoidIds, fixedIds)
   },
 
-  runRecommendation(fixedIds) {
+  runRecommendation(selectionFixedIds, avoidIds, persistentFixedIds) {
     const operationId = randomId('recommend')
     const started = Date.now()
     try {
@@ -51,13 +52,13 @@ Page({
         flavors: this.data.flavors.filter((item) => item.checked).map((item) => item.value),
         tags: String(this.data.tagsText || '').split(/[，,、]/).map((item) => item.trim()).filter(Boolean),
       }
-      const result = recommendRecipes(this.recipes, request, this.history, fixedIds, Math.random())
-      const selected = result.recipes.map((recipe) => ({ ...recipe, fixed: fixedIds.includes(recipe.id), nutritionChips: nutrientChips(recipe, this.settings) }))
+      const result = recommendRecipes(this.recipes, request, this.history, selectionFixedIds, Math.random(), avoidIds)
+      const selected = result.recipes.map((recipe) => ({ ...recipe, fixed: persistentFixedIds.includes(recipe.id), nutritionChips: nutrientChips(recipe, this.settings) }))
       const historyItem = { id: randomId('history'), recipeIds: result.recipes.map((item) => item.id), meal, createdAt: new Date().toISOString() }
       historyStore.add(historyItem)
       this.history.push(historyItem)
-      this.setData({ result, selected, fixedIds })
-      logger.info('recommendation', 'generated', { operationId, result: 'success', durationMs: Date.now() - started, message: `candidates=${this.recipes.length};selected=${selected.length};target=${result.targetCount}` })
+      this.setData({ result, selected, fixedIds: persistentFixedIds })
+      logger.info('recommendation', 'generated', { operationId, result: 'success', durationMs: Date.now() - started, message: `candidates=${this.recipes.length};selected=${selected.length};target=${result.targetCount};avoided=${avoidIds.length};replaced=${avoidIds.filter((id) => !selected.some((item) => item.id === id)).length}` })
     } catch (error) {
       const appError = showAppError(error, 'RECOMMENDATION')
       logger.error('recommendation', 'generate_failed', { operationId, errorCode: appError.code, message: appError.message })
@@ -73,7 +74,8 @@ Page({
   replaceRecipe(event) {
     const id = event.currentTarget.dataset.id
     const keep = this.data.selected.filter((item) => item.id !== id).map((item) => item.id)
-    this.runRecommendation(keep)
+    const persistentFixedIds = this.data.fixedIds.filter((fixedId) => fixedId !== id)
+    this.runRecommendation(keep, [id], persistentFixedIds)
   },
   openRecipe(event) { wx.navigateTo({ url: `/pages/detail/detail?id=${event.currentTarget.dataset.id}` }) },
 })

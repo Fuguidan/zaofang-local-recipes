@@ -10,18 +10,28 @@ function scoreRecipe(recipe, request, recentIds) {
   return score
 }
 
-function recommendRecipes(recipes, request, history, fixedIds, salt) {
+function seededTie(id, salt) {
+  let value = (Math.floor(Math.abs(salt % 1) * 0xffffffff) ^ 0x9e3779b9) >>> 0
+  for (let index = 0; index < String(id).length; index += 1) value = Math.imul(value ^ String(id).charCodeAt(index), 0x85ebca6b) >>> 0
+  value ^= value >>> 16
+  value = Math.imul(value, 0x7feb352d) >>> 0
+  value ^= value >>> 15
+  return value / 0x100000000
+}
+
+function recommendRecipes(recipes, request, history, fixedIds, salt, avoidIds) {
   const people = Number(request.people)
   if (!Number.isInteger(people) || people < 1 || people > 20) throw new AppError('RECOMMENDATION', '人数应为 1 到 20 的整数')
   const targetCount = people + 1
-  const recent = new Set((history || []).slice(-5).reduce((ids, item) => ids.concat(item.recipeIds || []), []))
+  const recent = new Set([...(history || [])].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).slice(-5).reduce((ids, item) => ids.concat(item.recipeIds || []), []))
   const fixed = (fixedIds || []).map((id) => recipes.find((item) => item.id === id)).filter(Boolean)
+  const avoid = new Set((avoidIds || []).filter((id) => !(fixedIds || []).includes(id)))
   const seed = Number.isFinite(salt) ? salt : Math.random()
   const ranked = recipes
     .filter((recipe) => !(fixedIds || []).includes(recipe.id))
-    .map((recipe, index) => ({ recipe, score: scoreRecipe(recipe, request, recent), tie: (index + seed) % 1 }))
+    .map((recipe) => ({ recipe, score: scoreRecipe(recipe, request, recent), avoided: avoid.has(recipe.id), tie: seededTie(recipe.id, seed) }))
     .filter((item) => item.score >= 0)
-    .sort((a, b) => b.score - a.score || a.tie - b.tie)
+    .sort((a, b) => Number(a.avoided) - Number(b.avoided) || b.score - a.score || a.tie - b.tie)
     .map((item) => item.recipe)
   const selected = fixed.concat(ranked).slice(0, targetCount)
   const shortage = Math.max(0, targetCount - selected.length)
